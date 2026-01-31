@@ -1,0 +1,65 @@
+<div id="AutoTagConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox"
+     data-controller="__plugin/AutoTagJS">
+
+    <div class="content-primary">
+        <div class="verticalSection">
+            <h2 class="sectionTitle">Auto Tag Settings</h2>
+            <p class="textMuted">Configure API keys and sources.</p>
+
+            <form class="AutoTagForm">
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="txtTraktClientId" label="Trakt Client ID" />
+                    <div class="fieldDescription">Your unique Trakt API Client ID.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="txtMdblistApiKey" label="MDBList API Key" />
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label>
+                        <input is="emby-checkbox" type="checkbox" id="chkExtendedConsoleOutput" />
+                        <span>Extended Console Output</span>
+                    </label>
+                </div>
+
+                <br />
+                <hr />
+
+                <div class="sectionTitleContainer flex align-items-center" style="margin-bottom: 1em;">
+                    <h2 class="sectionTitle">Tag Sources</h2>
+                    <button is="emby-button" type="button" id="btnAddTag" class="raised button-submit mb025" style="margin-left: 20px;">
+                        <span>+ Add Source</span>
+                    </button>
+                </div>
+
+                <div id="tagListContainer" class="verticalSection"></div>
+
+                <br />
+                <br />
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save Settings</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+
+        <div style="margin-top: 5em; padding-top: 2em; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #aaa;">
+            <p style="margin-bottom: 10px; font-weight: bold;">AutoTag v1.0.0.0</p>
+
+            <a href="https://github.com/soderlund91/autotag" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; color: #52B54B; font-weight: 500;">
+                <i class="md-icon" style="font-size: 1.2em;">code</i>
+                <span>View Source on GitHub</span>
+            </a>
+
+            <p style="font-size: 0.8em; margin-top: 15px; opacity: 0.7;">
+                Created by soderlund91
+            </p>
+        </div>
+
+
+    </div>
+</div>
