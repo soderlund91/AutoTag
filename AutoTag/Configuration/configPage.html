@@ -2,64 +2,211 @@
      data-require="emby-input,emby-button,emby-checkbox"
      data-controller="__plugin/AutoTagJS">
 
+    <style>
+        .tag-row {
+            background: rgba(0, 0, 0, 0.2);
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border-left: 5px solid #52B54B;
+            transition: all 0.2s ease;
+        }
+
+        .tag-header {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+            .tag-header:hover {
+                background: rgba(255, 255, 255, 0.05);
+            }
+
+        .tag-info {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+        }
+
+        .tag-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            margin: 0 15px;
+        }
+
+        .tag-status {
+            font-size: 0.8em;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tag-body {
+            padding: 0 15px 15px 15px;
+            display: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tag-row.expanded .tag-body {
+            display: block;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .tag-row.expanded {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .expand-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .tag-row.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .advanced-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .advanced-header {
+            padding: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .advanced-body {
+            padding: 20px;
+            display: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .advanced-section.expanded .advanced-body {
+            display: block;
+        }
+
+        .advanced-section.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .floating-actions {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 9999;
+            display: flex;
+            gap: 15px;
+        }
+
+        .fab-btn {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            height: 45px !important;
+            border-radius: 25px !important;
+            padding: 0 20px !important;
+            white-space: nowrap;
+        }
+
+        .btn-save {
+            background-color: #52B54B !important;
+        }
+
+        .btn-run {
+            background-color: #00a4dc !important;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+
     <div class="content-primary">
+
         <div class="verticalSection">
-            <h2 class="sectionTitle">Auto Tag Settings</h2>
-            <p class="textMuted">Configure API keys and sources.</p>
+            <h2 class="sectionTitle">Settings</h2>
+            <p class="textMuted">Configure API keys and sources for automatic tagging.</p>
 
             <form class="AutoTagForm">
+
                 <div class="inputContainer">
                     <input is="emby-input" type="text" id="txtTraktClientId" label="Trakt Client ID" />
-                    <div class="fieldDescription">Your unique Trakt API Client ID.</div>
                 </div>
-
                 <div class="inputContainer">
                     <input is="emby-input" type="text" id="txtMdblistApiKey" label="MDBList API Key" />
                 </div>
 
-                <div class="checkboxContainer checkboxContainer-withDescription">
-                    <label>
-                        <input is="emby-checkbox" type="checkbox" id="chkExtendedConsoleOutput" />
-                        <span>Extended Console Output</span>
-                    </label>
+                <div class="advanced-section" id="advancedSettings">
+                    <div class="advanced-header">
+                        <i class="md-icon expand-icon">expand_more</i>
+                        <span style="margin-left: 10px; font-weight: bold;">Advanced Settings</span>
+                    </div>
+                    <div class="advanced-body">
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="chkExtendedConsoleOutput" />
+                                <span>Extended Log Output</span>
+                            </label>
+                            <div class="fieldDescription">Enable verbose logging for debugging purposes.</div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top: 15px;">
+                            <label>
+                                <input is="emby-checkbox" type="checkbox" id="chkDryRunMode" />
+                                <span>Dry Run Mode</span>
+                            </label>
+                            <div class="fieldDescription">If enabled, the plugin will simulate the process and log changes to the Emby-log, but NO tags will be added or removed from your database.</div>
+                        </div>
+                    </div>
                 </div>
 
-                <br />
                 <hr />
 
-                <div class="sectionTitleContainer flex align-items-center" style="margin-bottom: 1em;">
-                    <h2 class="sectionTitle">Tag Sources</h2>
-                    <button is="emby-button" type="button" id="btnAddTag" class="raised button-submit mb025" style="margin-left: 20px;">
-                        <span>+ Add Source</span>
+                <div class="sectionTitleContainer flex align-items-center" style="margin-bottom: 1em; margin-top: 2em;">
+                    <h2 class="sectionTitle" style="margin-bottom:0;">Tag Sources</h2>
+                    <button is="emby-button" type="button" id="btnAddTag" class="raised button-submit mb025" style="margin-left: auto;">
+                        <span>+ Add New Source</span>
                     </button>
                 </div>
 
                 <div id="tagListContainer" class="verticalSection"></div>
 
-                <br />
-                <br />
-                <div>
-                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                <br /><br /><br /><br /><br />
+
+                <div class="floating-actions">
+                    <button is="emby-button" type="submit" class="raised button-submit fab-btn btn-save">
+                        <i class="md-icon" style="margin-right:5px;">save</i>
                         <span>Save Settings</span>
                     </button>
+
+                    <button is="emby-button" type="button" id="btnRunSync" class="raised button-submit fab-btn btn-run">
+                        <i class="md-icon" style="margin-right:5px;">play_arrow</i>
+                        <span>Run Full Sync</span>
+                    </button>
                 </div>
+
             </form>
         </div>
 
-
         <div style="margin-top: 5em; padding-top: 2em; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: #aaa;">
-            <p style="margin-bottom: 10px; font-weight: bold;">AutoTag v1.0.0.0</p>
-
+            <p style="margin-bottom: 10px; font-weight: bold;">AutoTag v1.1.0.0</p>
             <a href="https://github.com/soderlund91/autotag" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; color: #52B54B; font-weight: 500;">
                 <i class="md-icon" style="font-size: 1.2em;">code</i>
                 <span>View Source on GitHub</span>
             </a>
-
-            <p style="font-size: 0.8em; margin-top: 15px; opacity: 0.7;">
-                Created by soderlund91
-            </p>
         </div>
-
 
     </div>
 </div>
