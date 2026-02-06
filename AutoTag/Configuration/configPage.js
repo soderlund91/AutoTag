@@ -24,6 +24,7 @@ define([], function () {
     function renderTagGroup(tagConfig, container) {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
+        var limit = tagConfig.Limit || 50; // Standardvärde om tomt
         var urls = tagConfig.Urls || [];
         var blacklist = (tagConfig.Blacklist || []).join(', ');
 
@@ -57,11 +58,17 @@ define([], function () {
             </div>
 
             <div class="tag-body" style="display:none; padding:15px; border-top:1px solid rgba(255,255,255,0.1);">
-                <div class="inputContainer">
-                    <input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" />
+                
+                <div style="display:flex; gap:20px; align-items:center;">
+                    <div class="inputContainer" style="flex-grow:1;">
+                        <input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" />
+                    </div>
+                    <div class="inputContainer" style="width:120px;">
+                        <input is="emby-input" class="txtTagLimit" type="number" label="Max Items" value="${limit}" min="1" />
+                    </div>
                 </div>
                 
-                <p style="margin:20px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
+                <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
                 <div class="url-list-container">${urlHtml}</div>
                 <div style="margin-top:10px;">
                     <button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;">
@@ -210,7 +217,7 @@ define([], function () {
                     var t = rawTags[i];
                     var name = t.Tag || 'Untitled';
                     if (!grouped[name]) {
-                        grouped[name] = { Tag: name, Urls: [], Active: t.Active !== false, Blacklist: t.Blacklist || [] };
+                        grouped[name] = { Tag: name, Urls: [], Active: t.Active !== false, Limit: t.Limit || 50, Blacklist: t.Blacklist || [] };
                     }
                     if (t.Url) grouped[name].Urls.push(t.Url);
 
@@ -221,7 +228,7 @@ define([], function () {
 
                 var keys = Object.keys(grouped);
                 if (keys.length > 0) { keys.forEach(function (k) { renderTagGroup(grouped[k], container); }); }
-                else { renderTagGroup({ Tag: '', Urls: [''], Active: true, Blacklist: [] }, container); }
+                else { renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container); }
 
                 if (window.Dashboard) window.Dashboard.hideLoadingMsg();
             });
@@ -229,7 +236,7 @@ define([], function () {
 
         view.querySelector('#btnAddTag').addEventListener('click', function () {
             var container = view.querySelector('#tagListContainer');
-            renderTagGroup({ Tag: '', Urls: [''], Active: true, Blacklist: [] }, container);
+            renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container);
             var newRow = container.lastElementChild;
             newRow.querySelector('.tag-body').style.display = 'block';
             newRow.querySelector('.expand-icon').innerText = 'expand_less';
@@ -245,6 +252,7 @@ define([], function () {
 
             rows.forEach(function (row) {
                 var tagName = row.querySelector('.txtTagName').value;
+                var limitVal = parseInt(row.querySelector('.txtTagLimit').value) || 50; // Läs limit
                 var isActive = row.querySelector('.chkTagActive').checked;
                 var urls = row.querySelectorAll('.txtTagUrl');
 
@@ -259,7 +267,7 @@ define([], function () {
                                 Tag: tagName,
                                 Url: u.trim(),
                                 Active: isActive,
-                                Limit: 50,
+                                Limit: limitVal, // Spara limit
                                 Blacklist: blArray
                             });
                         }
