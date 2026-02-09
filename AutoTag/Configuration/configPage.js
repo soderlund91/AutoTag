@@ -21,10 +21,10 @@ define([], function () {
             </div>`;
     }
 
-    function renderTagGroup(tagConfig, container) {
+    function renderTagGroup(tagConfig, container, prepend) {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
-        var limit = tagConfig.Limit || 50; // Standardvärde om tomt
+        var limit = tagConfig.Limit || 50;
         var urls = tagConfig.Urls || [];
         var blacklist = (tagConfig.Blacklist || []).join(', ');
 
@@ -93,9 +93,15 @@ define([], function () {
             </div>
         </div>`;
 
-        container.insertAdjacentHTML('beforeend', html);
-        var row = container.lastElementChild;
-        setupRowEvents(row);
+        if (prepend) {
+            container.insertAdjacentHTML('afterbegin', html);
+            var row = container.firstElementChild;
+            setupRowEvents(row);
+        } else {
+            container.insertAdjacentHTML('beforeend', html);
+            var row = container.lastElementChild;
+            setupRowEvents(row);
+        }
     }
 
     function setupRowEvents(row) {
@@ -190,6 +196,30 @@ define([], function () {
             var ApiClient = window.ApiClient;
             if (window.Dashboard) window.Dashboard.showLoadingMsg();
 
+            var btnOpenHelp = view.querySelector('#btnOpenHelp');
+            var btnCloseHelp = view.querySelector('#btnCloseHelp');
+            var modalOverlay = view.querySelector('#helpModalOverlay');
+
+            if (btnOpenHelp && modalOverlay) {
+                btnOpenHelp.addEventListener('click', function () {
+                    modalOverlay.classList.add('modal-visible');
+                });
+            }
+
+            if (btnCloseHelp && modalOverlay) {
+                btnCloseHelp.addEventListener('click', function () {
+                    modalOverlay.classList.remove('modal-visible');
+                });
+            }
+
+            if (modalOverlay) {
+                modalOverlay.addEventListener('click', function (e) {
+                    if (e.target === modalOverlay) {
+                        modalOverlay.classList.remove('modal-visible');
+                    }
+                });
+            }
+
             ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                 var container = view.querySelector('#tagListContainer');
                 container.innerHTML = '';
@@ -227,8 +257,12 @@ define([], function () {
                 }
 
                 var keys = Object.keys(grouped);
-                if (keys.length > 0) { keys.forEach(function (k) { renderTagGroup(grouped[k], container); }); }
-                else { renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container); }
+                if (keys.length > 0) {
+                    keys.forEach(function (k) { renderTagGroup(grouped[k], container, false); });
+                }
+                else {
+                    renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container, false);
+                }
 
                 if (window.Dashboard) window.Dashboard.hideLoadingMsg();
             });
@@ -236,8 +270,9 @@ define([], function () {
 
         view.querySelector('#btnAddTag').addEventListener('click', function () {
             var container = view.querySelector('#tagListContainer');
-            renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container);
-            var newRow = container.lastElementChild;
+            renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container, true);
+            var newRow = container.firstElementChild;
+            newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             newRow.querySelector('.tag-body').style.display = 'block';
             newRow.querySelector('.expand-icon').innerText = 'expand_less';
         });
@@ -252,7 +287,7 @@ define([], function () {
 
             rows.forEach(function (row) {
                 var tagName = row.querySelector('.txtTagName').value;
-                var limitVal = parseInt(row.querySelector('.txtTagLimit').value) || 50; // Läs limit
+                var limitVal = parseInt(row.querySelector('.txtTagLimit').value) || 50;
                 var isActive = row.querySelector('.chkTagActive').checked;
                 var urls = row.querySelectorAll('.txtTagUrl');
 
@@ -267,7 +302,7 @@ define([], function () {
                                 Tag: tagName,
                                 Url: u.trim(),
                                 Active: isActive,
-                                Limit: limitVal, // Spara limit
+                                Limit: limitVal,
                                 Blacklist: blArray
                             });
                         }

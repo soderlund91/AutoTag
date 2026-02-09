@@ -44,7 +44,18 @@ namespace AutoTag
                 using (var stream = await _httpClient.Get(new HttpRequestOptions { Url = apiUrl, CancellationToken = cancellationToken }))
                 {
                     var result = _jsonSerializer.DeserializeFromStream<List<MdbListItem>>(stream);
-                    if (result != null) return result.Select(x => new ExternalItemDto { Name = x.title, Imdb = x.imdb_id, Tmdb = x.id?.ToString() }).ToList();
+                    if (result != null)
+                    {
+                        return result
+                            .Where(x => !string.IsNullOrEmpty(x.imdb_id))
+                            .Select(x => new ExternalItemDto
+                            {
+                                Name = x.title,
+                                Imdb = x.imdb_id,
+                                Tmdb = null
+                            })
+                            .ToList();
+                    }
                 }
             }
             catch { }
@@ -106,8 +117,9 @@ namespace AutoTag
                             {
                                 string? title = item.movie?.title ?? item.show?.title;
                                 string? imdb = item.movie?.ids?.imdb ?? item.show?.ids?.imdb;
-                                string? tmdb = (item.movie?.ids?.tmdb ?? item.show?.ids?.tmdb)?.ToString();
-                                if (!string.IsNullOrEmpty(title)) list.Add(new ExternalItemDto { Name = title, Imdb = imdb, Tmdb = tmdb });
+
+                                if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(imdb))
+                                    list.Add(new ExternalItemDto { Name = title, Imdb = imdb, Tmdb = null });
                             }
                             return list;
                         }
@@ -121,8 +133,8 @@ namespace AutoTag
                         {
                             foreach (var item in flatList)
                             {
-                                if (!string.IsNullOrEmpty(item.title))
-                                    list.Add(new ExternalItemDto { Name = item.title, Imdb = item.ids?.imdb, Tmdb = item.ids?.tmdb?.ToString() });
+                                if (!string.IsNullOrEmpty(item.title) && !string.IsNullOrEmpty(item.ids?.imdb))
+                                    list.Add(new ExternalItemDto { Name = item.title, Imdb = item.ids?.imdb, Tmdb = null });
                             }
                             if (list.Count > 0) return list;
                         }

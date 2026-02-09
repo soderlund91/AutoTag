@@ -10,8 +10,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -50,16 +48,70 @@ namespace AutoTag
             bool debug = config.ExtendedConsoleOutput;
             bool dryRun = config.DryRunMode;
 
-            _logger.Info($"--- STARTING AUTOTAG (v1.3.0) ---");
+            _logger.Info($"--- STARTING AUTOTAG (v1.3.1 - Safe Mode) ---");
+
+            var fetcher = new ListFetcher(_httpClient, _jsonSerializer);
+
+            var newTagData = new Dictionary<string, List<ExternalItemDto>>();
+            int totalItemsFetched = 0;
+            bool anyFetchFailed = false;
+
+            double step = 40.0 / (config.Tags.Count > 0 ? config.Tags.Count : 1);
+            double currentProgress = 0;
+
+            _logger.Info("Phase 1: Fetching data from external sources...");
+
+            foreach (var tagConfig in config.Tags)
+            {
+                if (!tagConfig.Active || string.IsNullOrWhiteSpace(tagConfig.Tag)) continue;
+
+                string tagName = tagConfig.Tag.Trim();
+                if (!newTagData.ContainsKey(tagName)) newTagData[tagName] = new List<ExternalItemDto>();
+
+                try
+                {
+                    if (debug) _logger.Info($"Fetching '{tagName}' from: {tagConfig.Url}");
+
+                    var items = await fetcher.FetchItems(tagConfig.Url, tagConfig.Limit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
+
+                    if (items.Count > 0)
+                    {
+                        if (items.Count > tagConfig.Limit) items = items.Take(tagConfig.Limit).ToList();
+                        newTagData[tagName].AddRange(items);
+                        totalItemsFetched += items.Count;
+                    }
+                    else
+                    {
+                        if (debug) _logger.Warn($"Source returned 0 items for '{tagName}'.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to fetch data for '{tagName}': {ex.Message}");
+                    anyFetchFailed = true;
+                }
+
+                currentProgress += step;
+                progress.Report(currentProgress);
+            }
+
+            if (config.Tags.Any(t => t.Active) && totalItemsFetched == 0)
+            {
+                _logger.Error("CRITICAL: Fetched 0 items from all active sources. Aborting sync to protect existing tags.");
+                return;
+            }
+
+            if (anyFetchFailed && debug)
+            {
+                _logger.Warn("Some sources failed to download. Proceeding with the ones that worked.");
+            }
+
+            _logger.Info($"Phase 2: Updating library. Found {totalItemsFetched} items to tag.");
 
             TagCacheManager.Instance.Initialize(Plugin.Instance.DataFolderPath, _jsonSerializer);
             TagCacheManager.Instance.ClearCache();
 
-            var currentTags = config.Tags
-                .Where(t => !string.IsNullOrWhiteSpace(t.Tag))
-                .Select(t => t.Tag.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var currentTags = newTagData.Keys.ToList();
 
             var previousTags = LoadTagHistory();
             var orphanedTags = previousTags.Except(currentTags, StringComparer.OrdinalIgnoreCase).ToList();
@@ -71,76 +123,49 @@ namespace AutoTag
 
             if (!dryRun) SaveTagHistory(currentTags);
 
-            progress.Report(5);
-
             foreach (var tagName in currentTags) CleanUpTag(tagName, debug, dryRun);
 
-            progress.Report(10);
-
-            var fetcher = new ListFetcher(_httpClient, _jsonSerializer);
-            double step = 90.0 / (config.Tags.Count > 0 ? config.Tags.Count : 1);
-            double currentProgress = 10;
+            progress.Report(50);
+            step = 50.0 / (newTagData.Count > 0 ? newTagData.Count : 1);
 
             foreach (var tagConfig in config.Tags)
             {
-                if (!tagConfig.Active || string.IsNullOrWhiteSpace(tagConfig.Tag))
-                {
-                    currentProgress += step;
-                    continue;
-                }
-
+                if (!tagConfig.Active) continue;
                 string tagName = tagConfig.Tag.Trim();
 
+                if (!newTagData.ContainsKey(tagName)) continue;
+                var itemsToTag = newTagData[tagName];
+
                 var localBlacklist = new HashSet<string>(tagConfig.Blacklist ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                int addedCount = 0;
+                var processedIds = new HashSet<string>();
 
-                if (debug) _logger.Info($"[SOURCE] Processing '{tagName}' from: {tagConfig.Url}");
-                if (localBlacklist.Count > 0 && debug) _logger.Info($"   -> Blacklist contains {localBlacklist.Count} items.");
-
-                try
+                foreach (var item in itemsToTag)
                 {
-                    var itemsFound = await fetcher.FetchItems(tagConfig.Url, tagConfig.Limit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
+                    if (string.IsNullOrEmpty(item.Imdb)) continue;
 
-                    if (itemsFound.Count > tagConfig.Limit)
-                        itemsFound = itemsFound.Take(tagConfig.Limit).ToList();
-
-                    int addedCount = 0;
-                    var processedIds = new HashSet<string>();
-
-                    foreach (var item in itemsFound)
+                    if (localBlacklist.Contains(item.Imdb))
                     {
-                        bool isBlacklisted = (!string.IsNullOrEmpty(item.Imdb) && localBlacklist.Contains(item.Imdb)) ||
-                                             (!string.IsNullOrEmpty(item.Tmdb) && localBlacklist.Contains(item.Tmdb));
-
-                        if (isBlacklisted)
-                        {
-                            if (debug) _logger.Info($"   [BLACKLIST] Skipped '{item.Name}' for tag '{tagName}'");
-                            continue;
-                        }
-
-                        if (!string.IsNullOrEmpty(item.Imdb)) TagCacheManager.Instance.AddToCache($"imdb_{item.Imdb}", tagName);
-                        if (!string.IsNullOrEmpty(item.Tmdb)) TagCacheManager.Instance.AddToCache($"tmdb_{item.Tmdb}", tagName);
-
-                        string uid = !string.IsNullOrEmpty(item.Imdb) ? item.Imdb : $"tmdb-{item.Tmdb}";
-                        if (processedIds.Contains(uid)) continue;
-                        processedIds.Add(uid);
-
-                        if (MatchAndTag(item, tagName, debug, dryRun)) addedCount++;
+                        if (debug) _logger.Info($"   [BLACKLIST] Skipped '{item.Name}' ({item.Imdb})");
+                        continue;
                     }
-                    _logger.Info($"    -> Tagged {addedCount} existing items with '{tagName}'.");
+
+                    TagCacheManager.Instance.AddToCache($"imdb_{item.Imdb}", tagName);
+
+                    if (processedIds.Contains(item.Imdb)) continue;
+                    processedIds.Add(item.Imdb);
+
+                    if (MatchAndTag(item, tagName, debug, dryRun)) addedCount++;
                 }
-                catch (Exception ex)
-                {
-                    _logger.Error($"Error processing {tagConfig.Url}: {ex.Message}");
-                }
+
+                if (debug || addedCount > 0)
+                    _logger.Info($"    -> Tagged {addedCount} items with '{tagName}'.");
 
                 currentProgress += step;
-                progress.Report(currentProgress);
+                progress.Report(50 + currentProgress);
             }
 
-            if (!dryRun)
-            {
-                TagCacheManager.Instance.Save();
-            }
+            if (!dryRun) TagCacheManager.Instance.Save();
 
             progress.Report(100);
             _logger.Info("--- Finished ---");
@@ -172,23 +197,20 @@ namespace AutoTag
 
         private void CleanUpTag(string tagName, bool debug, bool dryRun)
         {
-            var query = new InternalItemsQuery { Recursive = true, DtoOptions = new MediaBrowser.Controller.Dto.DtoOptions(true) };
+            var query = new InternalItemsQuery { Recursive = true, DtoOptions = new MediaBrowser.Controller.Dto.DtoOptions(true), Tags = new[] { tagName } };
             var allItems = _libraryManager.GetItemList(query);
+
             int count = 0;
             foreach (var item in allItems)
             {
-                if (item.Tags.Contains(tagName, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (dryRun) { count++; continue; }
+                if (dryRun) { count++; continue; }
 
-                    var master = _libraryManager.GetItemById(item.Id);
-                    var actualTag = master?.Tags.FirstOrDefault(t => t.Equals(tagName, StringComparison.OrdinalIgnoreCase));
-                    if (master != null && actualTag != null)
-                    {
-                        master.RemoveTag(actualTag);
-                        _libraryManager.UpdateItem(master, master.Parent, ItemUpdateType.MetadataEdit, null);
-                        count++;
-                    }
+                var master = _libraryManager.GetItemById(item.Id);
+                if (master != null && master.Tags.Contains(tagName, StringComparer.OrdinalIgnoreCase))
+                {
+                    master.RemoveTag(tagName);
+                    _libraryManager.UpdateItem(master, master.Parent, ItemUpdateType.MetadataEdit, null);
+                    count++;
                 }
             }
             if (count > 0 && debug)
@@ -201,8 +223,9 @@ namespace AutoTag
         private bool MatchAndTag(ExternalItemDto extItem, string tagName, bool debug, bool dryRun)
         {
             BaseItem? target = null;
-            if (!string.IsNullOrEmpty(extItem.Imdb)) target = FindValidItem(new Dictionary<string, string> { { "imdb", extItem.Imdb } });
-            if (target == null && !string.IsNullOrEmpty(extItem.Tmdb)) target = FindValidItem(new Dictionary<string, string> { { "tmdb", extItem.Tmdb } });
+
+            if (!string.IsNullOrEmpty(extItem.Imdb))
+                target = FindValidItem(new Dictionary<string, string> { { "imdb", extItem.Imdb } });
 
             if (target != null && !target.Tags.Contains(tagName, StringComparer.OrdinalIgnoreCase))
             {
@@ -213,7 +236,7 @@ namespace AutoTag
                 }
 
                 var masterItem = _libraryManager.GetItemById(target.Id);
-                if (masterItem != null && !string.IsNullOrEmpty(masterItem.Path))
+                if (masterItem != null)
                 {
                     masterItem.AddTag(tagName);
                     _libraryManager.UpdateItem(masterItem, masterItem.Parent, ItemUpdateType.MetadataEdit, null);
