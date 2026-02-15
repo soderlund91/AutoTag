@@ -2,6 +2,40 @@ define([], function () {
     'use strict';
 
     var pluginId = "7c10708f-43e4-4d69-923c-77d01802315b";
+    var statusInterval = null;
+
+    var customCss = `
+    <style>
+        .day-toggle {
+            background: var(--theme-background-level1);
+            color: var(--theme-text-secondary);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        .day-toggle:hover {
+            background: var(--theme-background-level2);
+            color: var(--theme-text-primary);
+        }
+        .day-toggle.active {
+            background: #52B54B; /* Emby Green */
+            color: #fff;
+            border-color: #52B54B;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .date-row-container {
+            background: rgba(0,0,0,0.2); 
+            border: 1px solid rgba(255,255,255,0.05); 
+            border-radius: 6px; 
+            padding: 15px; 
+            margin-bottom: 10px;
+        }
+    </style>`;
 
     function getUrlRowHtml(value) {
         var val = value || '';
@@ -10,14 +44,83 @@ define([], function () {
                 <div style="flex-grow:1;">
                     <input is="emby-input" class="txtTagUrl" type="text" label="Trakt/MDBList URL or ID" value="${val}" />
                 </div>
-                
-                <button type="button" is="emby-button" class="raised button-submit btnTestUrl" style="min-width:60px; height:36px; padding:0 10px; font-size:0.8rem; margin:0;" title="Test Source">
-                    <span>Test</span>
-                </button>
+                <button type="button" is="emby-button" class="raised button-submit btnTestUrl" style="min-width:60px; height:36px; padding:0 10px; font-size:0.8rem; margin:0;" title="Test Source"><span>Test</span></button>
+                <button type="button" is="emby-button" class="raised btnRemoveUrl" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none;" title="Remove URL"><i class="md-icon">remove_circle_outline</i></button>
+            </div>`;
+    }
 
-                <button type="button" is="emby-button" class="raised btnRemoveUrl" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none;" title="Remove URL">
-                    <i class="md-icon">remove_circle_outline</i>
-                </button>
+    function getMonthOptions(selectedMonth) {
+        var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        return months.map((m, i) => `<option value="${i + 1}" ${selectedMonth == (i + 1) ? 'selected' : ''}>${m}</option>`).join('');
+    }
+
+    function getDayOptions(selectedDay) {
+        var html = '';
+        for (var i = 1; i <= 31; i++) html += `<option value="${i}" ${selectedDay == i ? 'selected' : ''}>${i}</option>`;
+        return html;
+    }
+
+    function getWeekButtons(savedDays) {
+        var days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        var shortDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        var saved = (savedDays || "").toLowerCase();
+
+        return days.map((d, i) => {
+            var isActive = saved.includes(d.toLowerCase());
+            return `<button type="button" class="day-toggle ${isActive ? 'active' : ''}" data-day="${d}">${shortDays[i]}</button>`;
+        }).join('');
+    }
+
+    function getDateRowHtml(interval) {
+        var type = interval.Type || 'SpecificDate';
+
+        var sDate = interval.Start ? new Date(interval.Start).toISOString().split('T')[0] : '';
+        var eDate = interval.End ? new Date(interval.End).toISOString().split('T')[0] : '';
+
+        var sMonth = interval.Start ? new Date(interval.Start).getMonth() + 1 : 12;
+        var sDay = interval.Start ? new Date(interval.Start).getDate() : 1;
+        var eMonth = interval.End ? new Date(interval.End).getMonth() + 1 : 12;
+        var eDay = interval.End ? new Date(interval.End).getDate() : 31;
+
+        var dayOfWeek = interval.DayOfWeek || '';
+
+        return `
+            <div class="date-row date-row-container" style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 15px;">
+                
+                <div style="width:150px;">
+                    <select is="emby-select" class="selDateType" label="Rule Type" style="width:100%;">
+                        <option value="SpecificDate" ${type === 'SpecificDate' ? 'selected' : ''}>Specific Date</option>
+                        <option value="EveryYear" ${type === 'EveryYear' ? 'selected' : ''}>Annual (Recurring)</option>
+                        <option value="Weekly" ${type === 'Weekly' ? 'selected' : ''}>Weekly Days</option>
+                    </select>
+                </div>
+                
+                <div class="inputs-specific" style="display: ${type === 'SpecificDate' ? 'flex' : 'none'}; gap: 10px; flex-grow: 1; align-items: center;">
+                    <div style="flex-grow:1;"><input is="emby-input" type="date" class="txtFullStartDate" label="Start Date" value="${sDate}" /></div>
+                    <span style="opacity:0.5;">to</span>
+                    <div style="flex-grow:1;"><input is="emby-input" type="date" class="txtFullEndDate" label="End Date" value="${eDate}" /></div>
+                </div>
+
+                <div class="inputs-annual" style="display: ${type === 'EveryYear' ? 'flex' : 'none'}; gap: 10px; flex-grow: 1; align-items: center;">
+                    <div style="display:flex; gap:5px; flex-grow:1;">
+                        <select is="emby-select" class="selStartMonth" label="Start Month" style="flex-grow:2;">${getMonthOptions(sMonth)}</select>
+                        <select is="emby-select" class="selStartDay" label="Day" style="width:60px;">${getDayOptions(sDay)}</select>
+                    </div>
+                    <span style="opacity:0.5;">to</span>
+                    <div style="display:flex; gap:5px; flex-grow:1;">
+                        <select is="emby-select" class="selEndMonth" label="End Month" style="flex-grow:2;">${getMonthOptions(eMonth)}</select>
+                        <select is="emby-select" class="selEndDay" label="Day" style="width:60px;">${getDayOptions(eDay)}</select>
+                    </div>
+                </div>
+
+                <div class="inputs-weekly" style="display: ${type === 'Weekly' ? 'flex' : 'none'}; flex-grow: 1; align-items: center; gap: 5px; flex-wrap: wrap;">
+                    <span style="font-size:0.8em; opacity:0.7; margin-right:10px; text-transform:uppercase;">Active On:</span>
+                    <div class="week-btn-container" style="display:flex; gap:5px;">
+                        ${getWeekButtons(dayOfWeek)}
+                    </div>
+                </div>
+
+                <button type="button" is="emby-button" class="btnRemoveDate" style="background:transparent; color:#cc3333; min-width:40px; margin-top: 15px;" title="Remove Rule"><i class="md-icon">delete</i></button>
             </div>`;
     }
 
@@ -25,17 +128,22 @@ define([], function () {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
         var limit = tagConfig.Limit || 50;
-        var urls = tagConfig.Urls || [];
+        var urls = tagConfig.Urls || (tagConfig.Url ? [tagConfig.Url] : ['']);
         var blacklist = (tagConfig.Blacklist || []).join(', ');
+        var intervals = tagConfig.ActiveIntervals || [];
 
         var activeText = tagConfig.Active !== false ? "Active" : "Disabled";
         var activeColor = tagConfig.Active !== false ? "#52B54B" : "var(--theme-text-secondary)";
 
-        var urlHtml = '';
-        if (urls.length > 0) {
-            for (var i = 0; i < urls.length; i++) urlHtml += getUrlRowHtml(urls[i]);
-        } else {
-            urlHtml += getUrlRowHtml('');
+        var dateStatusHtml = '';
+        if (intervals.length > 0) {
+            var types = intervals.map(i => {
+                if (i.Type === 'Weekly') return 'Weekly';
+                if (i.Type === 'EveryYear') return 'Annual';
+                return 'Date';
+            });
+            var uniqueTypes = [...new Set(types)].join(', ');
+            dateStatusHtml = `<span class="tag-date-indicator" style="margin-left:15px; font-size:0.75em; color:#00a4dc; background:rgba(0,164,220,0.1); padding:2px 8px; border-radius:4px; display:flex; align-items:center; gap:4px; border:1px solid rgba(0,164,220,0.3);"><i class="md-icon" style="font-size:1.1em;">calendar_today</i>${uniqueTypes.toUpperCase()}</span>`;
         }
 
         var html = `
@@ -52,295 +160,229 @@ define([], function () {
                     <div class="tag-info">
                         <span class="tag-title" style="font-weight:bold; font-size:1.1em;">${tagName || 'New Tag'}</span>
                         <span class="tag-status" style="margin-left:10px; font-size:0.8em; opacity:0.7;">${urls.length} SOURCE(S)</span>
+                        ${dateStatusHtml}
                     </div>
                 </div>
                 <i class="md-icon expand-icon">expand_more</i>
             </div>
-
             <div class="tag-body" style="display:none; padding:15px; border-top:1px solid rgba(255,255,255,0.1);">
-                
-                <div style="display:flex; gap:20px; align-items:center;">
-                    <div class="inputContainer" style="flex-grow:1;">
-                        <input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" />
+                <div class="tag-tabs" style="display: flex; gap: 20px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <div class="tag-tab active" data-tab="general" style="padding: 8px 0; cursor: pointer; font-weight: bold; border-bottom: 2px solid #52B54B;">General</div>
+                    <div class="tag-tab" data-tab="advanced" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Advanced</div>
+                </div>
+                <div class="tab-content general-tab">
+                    <div style="display:flex; gap:20px; align-items:center;">
+                        <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
+                        <div class="inputContainer" style="width:120px;"><input is="emby-input" class="txtTagLimit" type="number" label="Max Items" value="${limit}" min="1" /></div>
                     </div>
-                    <div class="inputContainer" style="width:120px;">
-                        <input is="emby-input" class="txtTagLimit" type="number" label="Max Items" value="${limit}" min="1" />
+                    <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
+                    <div class="url-list-container">${urls.map(u => getUrlRowHtml(u)).join('')}</div>
+                    <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
+                </div>
+                <div class="tab-content advanced-tab" style="display:none;">
+                    <div class="inputContainer">
+                        <p style="margin:0 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Blacklist / Ignore (IMDB IDs)</p>
+                        <textarea is="emby-textarea" class="txtTagBlacklist" rows="2" placeholder="tt1234567, tt9876543">${blacklist}</textarea>
                     </div>
+                    <p style="margin:20px 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Active Schedule (Optional)</p>
+                    <div class="date-list-container">${intervals.map(i => getDateRowHtml(i)).join('')}</div>
+                    <button is="emby-button" type="button" class="btnAddDate" style="width:100%; background:transparent; border:1px dashed #555; margin-top:10px;"><i class="md-icon" style="margin-right:5px;">event</i>Add Schedule Rule</button>
                 </div>
-                
-                <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
-                <div class="url-list-container">${urlHtml}</div>
-                <div style="margin-top:10px;">
-                    <button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;">
-                        <i class="md-icon" style="margin-right:5px;">add</i>Add another URL
-                    </button>
-                </div>
-
-                <div class="inputContainer" style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed rgba(255,255,255,0.1);">
-                    <p style="margin:0 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Blacklist / Ignore</p>
-                    <textarea is="emby-textarea" 
-                              class="txtTagBlacklist" 
-                              rows="2" 
-                              placeholder="t.ex. tt1234567, The Matrix">${blacklist}</textarea>
-                    <div class="fieldDescription">Separate items with comma. Items here will NEVER be tagged by this rule.</div>
-                </div>
-
-                <div style="text-align:right; margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">
-                    <button is="emby-button" type="button" class="raised btnRemoveGroup" onclick="event.stopPropagation()" style="background:#cc3333 !important; color:#fff;">
-                        <i class="md-icon" style="margin-right:5px;">delete</i>Remove Tag Group
-                    </button>
-                </div>
+                <div style="text-align:right; margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;"><button is="emby-button" type="button" class="raised btnRemoveGroup" style="background:#cc3333 !important; color:#fff;"><i class="md-icon" style="margin-right:5px;">delete</i>Remove Tag Group</button></div>
             </div>
         </div>`;
 
-        if (prepend) {
-            container.insertAdjacentHTML('afterbegin', html);
-            var row = container.firstElementChild;
-            setupRowEvents(row);
-        } else {
-            container.insertAdjacentHTML('beforeend', html);
-            var row = container.lastElementChild;
-            setupRowEvents(row);
-        }
+        if (prepend) container.insertAdjacentHTML('afterbegin', html);
+        else container.insertAdjacentHTML('beforeend', html);
+        setupRowEvents(prepend ? container.firstElementChild : container.lastElementChild);
     }
 
     function setupRowEvents(row) {
-        var header = row.querySelector('.tag-header');
-        var body = row.querySelector('.tag-body');
-        var expandIcon = row.querySelector('.expand-icon');
+        row.querySelectorAll('.tag-tab').forEach(tab => {
+            tab.addEventListener('click', function () {
+                row.querySelectorAll('.tag-tab').forEach(t => { t.style.opacity = "0.6"; t.style.borderBottomColor = "transparent"; });
+                this.style.opacity = "1"; this.style.borderBottomColor = "#52B54B";
+                var target = this.getAttribute('data-tab');
+                row.querySelector('.general-tab').style.display = target === 'general' ? 'block' : 'none';
+                row.querySelector('.advanced-tab').style.display = target === 'advanced' ? 'block' : 'none';
+            });
+        });
 
-        header.addEventListener('click', function (e) {
+        row.addEventListener('change', e => {
+            if (e.target.classList.contains('selDateType')) {
+                var dateRow = e.target.closest('.date-row');
+                var type = e.target.value;
+                dateRow.querySelector('.inputs-specific').style.display = type === 'SpecificDate' ? 'flex' : 'none';
+                dateRow.querySelector('.inputs-annual').style.display = type === 'EveryYear' ? 'flex' : 'none';
+                dateRow.querySelector('.inputs-weekly').style.display = type === 'Weekly' ? 'flex' : 'none';
+            }
+        });
+
+        row.addEventListener('click', e => {
+            if (e.target.classList.contains('day-toggle')) {
+                e.target.classList.toggle('active');
+            }
+        });
+
+        var header = row.querySelector('.tag-header'), body = row.querySelector('.tag-body'), icon = row.querySelector('.expand-icon');
+        header.addEventListener('click', e => {
             if (e.target.closest('.header-actions')) return;
             var isHidden = body.style.display === 'none';
             body.style.display = isHidden ? 'block' : 'none';
-            expandIcon.innerText = isHidden ? 'expand_less' : 'expand_more';
+            icon.innerText = isHidden ? 'expand_less' : 'expand_more';
         });
 
-        var chk = row.querySelector('.chkTagActive');
-        var lblStatus = row.querySelector('.lblActiveStatus');
-
+        var chk = row.querySelector('.chkTagActive'), lblStatus = row.querySelector('.lblActiveStatus');
         chk.addEventListener('change', function () {
-            if (this.checked) {
-                lblStatus.textContent = "Active";
-                lblStatus.style.color = "#52B54B";
-            } else {
-                lblStatus.textContent = "Disabled";
-                lblStatus.style.color = "var(--theme-text-secondary)";
-            }
+            lblStatus.textContent = this.checked ? "Active" : "Disabled";
+            lblStatus.style.color = this.checked ? "#52B54B" : "var(--theme-text-secondary)";
         });
 
-        var txtName = row.querySelector('.txtTagName');
-        var titleSpan = row.querySelector('.tag-title');
-        txtName.addEventListener('input', function () { titleSpan.textContent = this.value || 'New Tag'; });
+        row.querySelector('.btnAddUrl').addEventListener('click', () => { row.querySelector('.url-list-container').insertAdjacentHTML('beforeend', getUrlRowHtml('')); updateCount(row); });
 
-        row.querySelector('.btnAddUrl').addEventListener('click', function () {
-            var list = row.querySelector('.url-list-container');
-            list.insertAdjacentHTML('beforeend', getUrlRowHtml(''));
-            updateCount(row);
-        });
+        row.querySelector('.btnAddDate').addEventListener('click', () => row.querySelector('.date-list-container').insertAdjacentHTML('beforeend', getDateRowHtml({ Type: 'SpecificDate' })));
 
-        row.querySelector('.url-list-container').addEventListener('click', function (e) {
-            if (e.target.closest('.btnRemoveUrl')) {
-                e.target.closest('.url-row').remove();
-                updateCount(row);
-                return;
-            }
+        row.addEventListener('click', e => {
+            if (e.target.closest('.btnRemoveUrl')) { e.target.closest('.url-row').remove(); updateCount(row); }
+            if (e.target.closest('.btnRemoveDate')) e.target.closest('.date-row').remove();
+            if (e.target.closest('.btnRemoveGroup')) if (confirm("Delete this tag group?")) row.remove();
 
             var btnTest = e.target.closest('.btnTestUrl');
             if (btnTest) {
-                var urlRow = btnTest.closest('.url-row');
-                var url = urlRow.querySelector('.txtTagUrl').value;
-                var span = btnTest.querySelector('span');
-                var originalText = span.textContent;
-
-                if (!url) {
-                    if (window.Dashboard) window.Dashboard.alert("Please enter a URL to test.");
-                    return;
-                }
-
-                span.textContent = "...";
+                var url = btnTest.closest('.url-row').querySelector('.txtTagUrl').value;
+                if (!url) return;
                 btnTest.disabled = true;
-                var ApiClient = window.ApiClient;
-
-                ApiClient.getJSON(ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: 10 })).then(function (result) {
-                    if (window.Dashboard) {
-                        if (result.Success) {
-                            window.Dashboard.alert("✅ Valid Link!\n\n" + result.Message);
-                        } else {
-                            window.Dashboard.alert("❌ Invalid Link:\n" + result.Message);
-                        }
-                    } else {
-                        alert(result.Message);
-                    }
-                }).catch(function () {
-                    if (window.Dashboard) window.Dashboard.alert("❌ Network Error:\nCould not reach the server plugin.");
-                }).finally(function () {
-                    span.textContent = originalText;
-                    btnTest.disabled = false;
-                });
+                window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: 1000 })).then(r => window.Dashboard.alert(r.Message)).finally(() => btnTest.disabled = false);
             }
         });
 
-        row.querySelector('.btnRemoveGroup').addEventListener('click', function () {
-            if (confirm("Delete this tag group?")) row.remove();
-        });
+        row.querySelector('.txtTagName').addEventListener('input', function () { row.querySelector('.tag-title').textContent = this.value || 'New Tag'; });
     }
 
-    function updateCount(row) {
-        var count = row.querySelectorAll('.txtTagUrl').length;
-        row.querySelector('.tag-status').textContent = count + " SOURCE(S)";
+    function updateCount(row) { row.querySelector('.tag-status').textContent = row.querySelectorAll('.txtTagUrl').length + " SOURCE(S)"; }
+
+    function refreshStatus(view) {
+        window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/Status")).then(result => {
+            var label = view.querySelector('#lastRunStatusLabel'), dot = view.querySelector('#dotStatus'), content = view.querySelector('#logContent');
+            var btnSave = view.querySelector('.btn-save'), btnRun = view.querySelector('#btnRunSync');
+
+            if (result.IsRunning) {
+                if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; btnSave.querySelector('span').textContent = "Sync in progress..."; }
+                if (btnRun) btnRun.disabled = true;
+            } else {
+                if (btnSave) { btnSave.disabled = false; btnSave.style.opacity = "1"; btnSave.querySelector('span').textContent = "Save Settings"; }
+                if (btnRun) btnRun.disabled = false;
+            }
+
+            if (label) label.textContent = result.LastRunStatus || "Never";
+            if (content && result.Logs) content.textContent = result.Logs.join('\n');
+            if (dot) {
+                dot.className = "status-dot";
+                if (result.LastRunStatus.includes("Running")) dot.classList.add("running");
+                else if (result.LastRunStatus.includes("Failed")) dot.classList.add("failed");
+            }
+        });
     }
 
     return function (view) {
-        view.addEventListener('viewshow', function () {
-            var ApiClient = window.ApiClient;
-            if (window.Dashboard) window.Dashboard.showLoadingMsg();
-
-            var btnOpenHelp = view.querySelector('#btnOpenHelp');
-            var btnCloseHelp = view.querySelector('#btnCloseHelp');
-            var modalOverlay = view.querySelector('#helpModalOverlay');
-
-            if (btnOpenHelp && modalOverlay) {
-                btnOpenHelp.addEventListener('click', function () {
-                    modalOverlay.classList.add('modal-visible');
-                });
+        view.addEventListener('viewshow', () => {
+            if (!document.getElementById('autoTagCustomCss')) {
+                document.body.insertAdjacentHTML('beforeend', customCss.replace('<style>', '<style id="autoTagCustomCss">'));
             }
 
-            if (btnCloseHelp && modalOverlay) {
-                btnCloseHelp.addEventListener('click', function () {
-                    modalOverlay.classList.remove('modal-visible');
-                });
-            }
+            refreshStatus(view);
+            statusInterval = setInterval(() => refreshStatus(view), 5000);
 
-            if (modalOverlay) {
-                modalOverlay.addEventListener('click', function (e) {
-                    if (e.target === modalOverlay) {
-                        modalOverlay.classList.remove('modal-visible');
-                    }
-                });
-            }
+            var logOverlay = view.querySelector('#logModalOverlay');
+            var helpOverlay = view.querySelector('#helpModalOverlay');
 
-            ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                var container = view.querySelector('#tagListContainer');
-                container.innerHTML = '';
+            view.querySelector('#btnOpenLogs').addEventListener('click', e => { e.preventDefault(); logOverlay.classList.add('modal-visible'); });
+            view.querySelector('#btnCloseLogs').addEventListener('click', () => logOverlay.classList.remove('modal-visible'));
+            logOverlay.addEventListener('click', e => { if (e.target === logOverlay) logOverlay.classList.remove('modal-visible'); });
 
-                var advHeader = view.querySelector('#advancedSettings .advanced-header');
-                var newHeader = advHeader.cloneNode(true);
-                advHeader.parentNode.replaceChild(newHeader, advHeader);
-                newHeader.addEventListener('click', function () {
-                    var section = view.querySelector('#advancedSettings');
-                    var body = section.querySelector('.advanced-body');
-                    var icon = section.querySelector('.expand-icon');
+            view.querySelector('#btnOpenHelp').addEventListener('click', () => helpOverlay.classList.add('modal-visible'));
+            view.querySelector('#btnCloseHelp').addEventListener('click', () => helpOverlay.classList.remove('modal-visible'));
+            helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('modal-visible'); });
+
+            var advHeader = view.querySelector('#advancedSettings .advanced-header');
+            if (advHeader) {
+                advHeader.addEventListener('click', function () {
+                    var body = view.querySelector('#advancedSettings .advanced-body');
+                    var icon = view.querySelector('#advancedSettings .expand-icon');
                     var isHidden = body.style.display === 'none';
                     body.style.display = isHidden ? 'block' : 'none';
                     icon.innerText = isHidden ? 'expand_less' : 'expand_more';
                 });
+            }
 
+            view.querySelector('#btnAddTag').addEventListener('click', () => renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50 }, view.querySelector('#tagListContainer'), true));
+
+            window.ApiClient.getPluginConfiguration(pluginId).then(config => {
+                var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
                 view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
                 view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
                 view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
                 view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
-
-                var rawTags = config.Tags || [];
                 var grouped = {};
-                for (var i = 0; i < rawTags.length; i++) {
-                    var t = rawTags[i];
-                    var name = t.Tag || 'Untitled';
-                    if (!grouped[name]) {
-                        grouped[name] = { Tag: name, Urls: [], Active: t.Active !== false, Limit: t.Limit || 50, Blacklist: t.Blacklist || [] };
-                    }
-                    if (t.Url) grouped[name].Urls.push(t.Url);
-
-                    if (t.Blacklist && t.Blacklist.length > 0) {
-                        t.Blacklist.forEach(b => { if (!grouped[name].Blacklist.includes(b)) grouped[name].Blacklist.push(b); });
-                    }
-                }
-
-                var keys = Object.keys(grouped);
-                if (keys.length > 0) {
-                    keys.forEach(function (k) { renderTagGroup(grouped[k], container, false); });
-                }
-                else {
-                    renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container, false);
-                }
-
-                if (window.Dashboard) window.Dashboard.hideLoadingMsg();
+                (config.Tags || []).forEach(t => {
+                    if (!grouped[t.Tag]) grouped[t.Tag] = { Tag: t.Tag, Urls: [], Active: t.Active, Limit: t.Limit, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals };
+                    if (t.Url) grouped[t.Tag].Urls.push(t.Url);
+                });
+                Object.keys(grouped).forEach(k => renderTagGroup(grouped[k], container, false));
+                if (Object.keys(grouped).length === 0) renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50 }, container, false);
             });
         });
 
-        view.querySelector('#btnAddTag').addEventListener('click', function () {
-            var container = view.querySelector('#tagListContainer');
-            renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50, Blacklist: [] }, container, true);
-            var newRow = container.firstElementChild;
-            newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            newRow.querySelector('.tag-body').style.display = 'block';
-            newRow.querySelector('.expand-icon').innerText = 'expand_less';
-        });
+        view.addEventListener('viewhide', () => { if (statusInterval) clearInterval(statusInterval); });
 
-        view.querySelector('.AutoTagForm').addEventListener('submit', function (e) {
+        view.querySelector('.AutoTagForm').addEventListener('submit', e => {
             e.preventDefault();
-            if (window.Dashboard) window.Dashboard.showLoadingMsg();
-
-            var ApiClient = window.ApiClient;
             var flatTags = [];
-            var rows = view.querySelectorAll('.tag-row');
+            view.querySelectorAll('.tag-row').forEach(row => {
+                var name = row.querySelector('.txtTagName').value, active = row.querySelector('.chkTagActive').checked, limit = parseInt(row.querySelector('.txtTagLimit').value) || 50;
+                var bl = row.querySelector('.txtTagBlacklist').value.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
-            rows.forEach(function (row) {
-                var tagName = row.querySelector('.txtTagName').value;
-                var limitVal = parseInt(row.querySelector('.txtTagLimit').value) || 50;
-                var isActive = row.querySelector('.chkTagActive').checked;
-                var urls = row.querySelectorAll('.txtTagUrl');
+                var intervals = [];
+                row.querySelectorAll('.date-row').forEach(dr => {
+                    var type = dr.querySelector('.selDateType').value;
+                    var s = null, e = null, days = "";
 
-                var blText = row.querySelector('.txtTagBlacklist').value;
-                var blArray = blText.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                    if (type === 'SpecificDate') {
+                        s = dr.querySelector('.txtFullStartDate').value;
+                        e = dr.querySelector('.txtFullEndDate').value;
+                    } else if (type === 'EveryYear') {
+                        var sM = dr.querySelector('.selStartMonth').value, sD = dr.querySelector('.selStartDay').value;
+                        var eM = dr.querySelector('.selEndMonth').value, eD = dr.querySelector('.selEndDay').value;
+                        s = `2000-${sM.padStart(2, '0')}-${sD.padStart(2, '0')}`;
+                        e = `2000-${eM.padStart(2, '0')}-${eD.padStart(2, '0')}`;
+                    } else if (type === 'Weekly') {
+                        var activeBtns = Array.from(dr.querySelectorAll('.day-toggle.active')).map(b => b.dataset.day);
+                        days = activeBtns.join(',');
+                    }
 
-                if (tagName) {
-                    urls.forEach(function (urlInput) {
-                        var u = urlInput.value;
-                        if (u && u.trim() !== '') {
-                            flatTags.push({
-                                Tag: tagName,
-                                Url: u.trim(),
-                                Active: isActive,
-                                Limit: limitVal,
-                                Blacklist: blArray
-                            });
-                        }
-                    });
-                }
+                    intervals.push({ Type: type, Start: s || null, End: e || null, DayOfWeek: days });
+                });
+
+                row.querySelectorAll('.txtTagUrl').forEach(u => {
+                    if (u.value) flatTags.push({ Tag: name, Url: u.value.trim(), Active: active, Limit: limit, Blacklist: bl, ActiveIntervals: intervals });
+                });
             });
 
-            ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+            window.ApiClient.getPluginConfiguration(pluginId).then(config => {
                 config.TraktClientId = view.querySelector('#txtTraktClientId').value;
                 config.MdblistApiKey = view.querySelector('#txtMdblistApiKey').value;
                 config.ExtendedConsoleOutput = view.querySelector('#chkExtendedConsoleOutput').checked;
                 config.DryRunMode = view.querySelector('#chkDryRunMode').checked;
                 config.Tags = flatTags;
-
-                ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
-                    if (window.Dashboard) window.Dashboard.processPluginConfigurationUpdateResult(result);
-                });
+                window.ApiClient.updatePluginConfiguration(pluginId, config).then(r => window.Dashboard.processPluginConfigurationUpdateResult(r));
             });
-            return false;
         });
 
-        var btnRunSync = view.querySelector('#btnRunSync');
-        if (btnRunSync) {
-            btnRunSync.addEventListener('click', function () {
-                if (window.Dashboard) window.Dashboard.showLoadingMsg();
-                var ApiClient = window.ApiClient;
-                ApiClient.getScheduledTasks().then(function (tasks) {
-                    var myTask = tasks.find(t => t.Key === "AutoTagSyncTask");
-                    if (myTask) {
-                        ApiClient.startScheduledTask(myTask.Id).then(function () {
-                            if (window.Dashboard) {
-                                window.Dashboard.hideLoadingMsg();
-                                window.Dashboard.alert('Sync started!');
-                            }
-                        });
-                    }
-                });
+        view.querySelector('#btnRunSync').addEventListener('click', () => {
+            window.ApiClient.getScheduledTasks().then(tasks => {
+                var t = tasks.find(x => x.Key === "AutoTagSyncTask");
+                if (t) window.ApiClient.startScheduledTask(t.Id).then(() => window.Dashboard.alert('Sync started!'));
             });
-        }
+        });
     };
 });
