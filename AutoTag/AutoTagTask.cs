@@ -1,4 +1,5 @@
 ﻿using MediaBrowser.Common.Net;
+using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -18,6 +19,7 @@ namespace AutoTag
     public class AutoTagTask : IScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
+        private readonly ICollectionManager _collectionManager;
         private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _jsonSerializer;
         private readonly ILogger _logger;
@@ -26,9 +28,10 @@ namespace AutoTag
         public static List<string> ExecutionLog { get; } = new List<string>();
         public static bool IsRunning { get; private set; } = false;
 
-        public AutoTagTask(ILibraryManager libraryManager, IHttpClient httpClient, IJsonSerializer jsonSerializer, ILogManager logManager)
+        public AutoTagTask(ILibraryManager libraryManager, ICollectionManager collectionManager, IHttpClient httpClient, IJsonSerializer jsonSerializer, ILogManager logManager)
         {
             _libraryManager = libraryManager;
+            _collectionManager = collectionManager;
             _httpClient = httpClient;
             _jsonSerializer = jsonSerializer;
             _logger = logManager.GetLogger("AutoTag");
@@ -49,294 +52,254 @@ namespace AutoTag
             IsRunning = true;
             try
             {
-                lock (ExecutionLog)
-                {
-                    ExecutionLog.Clear();
-                }
+                lock (ExecutionLog) ExecutionLog.Clear();
                 LastRunStatus = "Running...";
 
                 var config = Plugin.Instance?.Configuration;
-                if (config == null)
-                {
-                    LastRunStatus = "Failed: Configuration missing";
-                    return;
-                }
+                if (config == null) return;
 
                 bool debug = config.ExtendedConsoleOutput;
                 bool dryRun = config.DryRunMode;
 
-                LogAndTrace($"--- STARTING AUTOTAG (v{Plugin.Instance.Version}) ---");
-                if (dryRun) LogAndTrace("!!! DRY RUN MODE ENABLED - No changes will be saved !!!");
+                LogSummary($"--- STARTING AUTOTAG (v{Plugin.Instance.Version}) ---");
+                if (dryRun) LogSummary("!!! DRY RUN MODE - NO CHANGES WILL BE SAVED !!!");
+
+                LogSummary("Phase 1: Indexing local library...");
+
+                var allItems = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { "Movie", "Series" },
+                    Recursive = true,
+                    IsVirtualItem = false
+                }).ToList();
+
+                var imdbLookup = new Dictionary<string, List<BaseItem>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in allItems)
+                {
+                    if (item.LocationType != LocationType.FileSystem) continue;
+                    var imdb = item.GetProviderId("Imdb");
+                    if (!string.IsNullOrEmpty(imdb))
+                    {
+                        if (!imdbLookup.ContainsKey(imdb)) imdbLookup[imdb] = new List<BaseItem>();
+                        imdbLookup[imdb].Add(item);
+                    }
+                }
+
+                LogSummary("Phase 2: Fetching lists...");
 
                 var fetcher = new ListFetcher(_httpClient, _jsonSerializer);
-                var newTagData = new Dictionary<string, List<ExternalItemDto>>();
+                var desiredTagsMap = new Dictionary<Guid, HashSet<string>>();
+                var desiredCollectionsMap = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+                var managedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var activeCollections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var failedFetches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                var inactiveTags = new List<string>();
+                var previouslyManagedTags = LoadFileHistory("autotag_history.txt");
+                foreach (var t in previouslyManagedTags) managedTags.Add(t);
 
-                int totalItemsFetched = 0;
+                var previouslyManagedCollections = LoadFileHistory("autotag_collections.txt");
 
-                double step = 40.0 / (config.Tags.Count > 0 ? config.Tags.Count : 1);
+                TagCacheManager.Instance.Initialize(Plugin.Instance.DataFolderPath, _jsonSerializer);
+                TagCacheManager.Instance.ClearCache();
+
+                double step = 30.0 / (config.Tags.Count > 0 ? config.Tags.Count : 1);
                 double currentProgress = 0;
-
-                LogAndTrace("Phase 1: Fetching data and validating schedules...");
 
                 foreach (var tagConfig in config.Tags)
                 {
-                    if (!tagConfig.Active || string.IsNullOrWhiteSpace(tagConfig.Tag)) continue;
+                    if (string.IsNullOrWhiteSpace(tagConfig.Tag) || !tagConfig.Active) continue;
 
                     string tagName = tagConfig.Tag.Trim();
+                    managedTags.Add(tagName);
 
-                    if (tagConfig.ActiveIntervals != null && tagConfig.ActiveIntervals.Count > 0)
+                    if (!IsScheduleActive(tagConfig.ActiveIntervals))
                     {
-                        var now = DateTime.Now;
-                        bool withinInterval = false;
-
-                        foreach (var interval in tagConfig.ActiveIntervals)
-                        {
-                            if (interval.Type == "Weekly")
-                            {
-                                if (!string.IsNullOrEmpty(interval.DayOfWeek) &&
-                                    interval.DayOfWeek.IndexOf(now.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase) >= 0)
-                                {
-                                    withinInterval = true;
-                                }
-                            }
-                            else if (interval.Type == "EveryYear")
-                            {
-                                if (interval.Start.HasValue && interval.End.HasValue)
-                                {
-                                    var startDate = new DateTime(now.Year, interval.Start.Value.Month, interval.Start.Value.Day);
-                                    var endDate = new DateTime(now.Year, interval.End.Value.Month, interval.End.Value.Day);
-
-                                    if (endDate < startDate) endDate = endDate.AddYears(1);
-
-                                    if (now.Date >= startDate.Date && now.Date <= endDate.Date)
-                                        withinInterval = true;
-                                }
-                            }
-                            else
-                            {
-                                if ((!interval.Start.HasValue || now.Date >= interval.Start.Value.Date) &&
-                                    (!interval.End.HasValue || now.Date <= interval.End.Value.Date))
-                                {
-                                    withinInterval = true;
-                                }
-                            }
-
-                            if (withinInterval) break;
-                        }
-
-                        if (!withinInterval)
-                        {
-                            if (debug) LogAndTrace($"Tag '{tagName}' is out of schedule. Marking for cleanup.");
-                            inactiveTags.Add(tagName);
-                            continue;
-                        }
+                        if (debug) LogDebug($"Skipping '{tagName}' (Out of schedule).");
+                        continue;
                     }
 
-                    if (!newTagData.ContainsKey(tagName)) newTagData[tagName] = new List<ExternalItemDto>();
+                    string cName = string.IsNullOrWhiteSpace(tagConfig.CollectionName) ? tagName : tagConfig.CollectionName.Trim();
+                    if (tagConfig.EnableCollection) activeCollections.Add(cName);
 
                     try
                     {
-                        if (debug) LogAndTrace($"Fetching '{tagName}' from: {tagConfig.Url}");
-
                         var items = await fetcher.FetchItems(tagConfig.Url, tagConfig.Limit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
 
                         if (items.Count > 0)
                         {
                             if (items.Count > tagConfig.Limit) items = items.Take(tagConfig.Limit).ToList();
-                            newTagData[tagName].AddRange(items);
-                            totalItemsFetched += items.Count;
+                            int matchCount = 0;
+
+                            foreach (var extItem in items)
+                            {
+                                if (string.IsNullOrEmpty(extItem.Imdb)) continue;
+
+                                if (!tagConfig.OnlyCollection)
+                                    TagCacheManager.Instance.AddToCache($"imdb_{extItem.Imdb}", tagName);
+
+                                if (imdbLookup.TryGetValue(extItem.Imdb, out var localItems))
+                                {
+                                    foreach (var localItem in localItems)
+                                    {
+                                        matchCount++;
+                                        if (!tagConfig.OnlyCollection)
+                                        {
+                                            if (!desiredTagsMap.ContainsKey(localItem.Id))
+                                                desiredTagsMap[localItem.Id] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                            desiredTagsMap[localItem.Id].Add(tagName);
+                                        }
+
+                                        if (tagConfig.EnableCollection)
+                                        {
+                                            if (!desiredCollectionsMap.ContainsKey(cName))
+                                                desiredCollectionsMap[cName] = new HashSet<long>();
+                                            desiredCollectionsMap[cName].Add(localItem.InternalId);
+                                        }
+                                    }
+                                }
+                            }
+                            LogSummary($"   -> [OK] '{tagName}': Matched {matchCount} items.");
                         }
                     }
                     catch (Exception ex)
                     {
-                        LogAndTrace($"Failed to fetch data for '{tagName}': {ex.Message}", "Error");
+                        LogSummary($"Error fetching '{tagName}': {ex.Message}", "Error");
+                        failedFetches.Add(tagName);
+                        if (tagConfig.EnableCollection) failedFetches.Add(cName);
                     }
 
                     currentProgress += step;
                     progress.Report(currentProgress);
                 }
 
-                if (config.Tags.Any(t => t.Active) && totalItemsFetched == 0 && inactiveTags.Count == 0 && !dryRun)
+                if (!dryRun)
                 {
-                    LogAndTrace("CRITICAL: Fetched 0 items and no tags to clean. Aborting sync.", "Error");
-                    LastRunStatus = "Failed: No items found";
-                    return;
+                    TagCacheManager.Instance.Save();
+                    SaveFileHistory("autotag_history.txt", managedTags.ToList());
                 }
 
-                LogAndTrace($"Phase 2: Updating library. Found {totalItemsFetched} items to tag.");
-
-                TagCacheManager.Instance.Initialize(Plugin.Instance.DataFolderPath, _jsonSerializer);
-                TagCacheManager.Instance.ClearCache();
-
-                var currentTags = newTagData.Keys.ToList();
-                var previousTags = LoadTagHistory();
-
-                var orphanedTags = previousTags.Except(currentTags, StringComparer.OrdinalIgnoreCase).ToList();
-                if (orphanedTags.Count > 0)
+                LogSummary("Phase 3: Syncing Tags...");
+                int tagsAdded = 0, tagsRemoved = 0;
+                foreach (var item in allItems)
                 {
-                    foreach (var orphan in orphanedTags) CleanUpTag(orphan, debug, dryRun);
-                }
+                    var existingTags = new HashSet<string>(item.Tags, StringComparer.OrdinalIgnoreCase);
+                    var targetTags = desiredTagsMap.ContainsKey(item.Id) ? desiredTagsMap[item.Id] : new HashSet<string>();
 
-                if (inactiveTags.Count > 0)
-                {
-                    LogAndTrace($"Cleaning up {inactiveTags.Count} scheduled tags that are currently inactive.");
-                    foreach (var tag in inactiveTags)
+                    var toRemove = existingTags.Where(t => managedTags.Contains(t) && !targetTags.Contains(t) && !failedFetches.Contains(t)).ToList();
+                    var toAdd = targetTags.Where(t => !existingTags.Contains(t)).ToList();
+
+                    if (toRemove.Count == 0 && toAdd.Count == 0) continue;
+
+                    if (!dryRun)
                     {
-                        if (!orphanedTags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                        foreach (var t in toRemove) { item.RemoveTag(t); tagsRemoved++; }
+                        foreach (var t in toAdd) { item.AddTag(t); tagsAdded++; }
+                        _libraryManager.UpdateItem(item, item.Parent, ItemUpdateType.MetadataEdit, null);
+                    }
+                    else
+                    {
+                        tagsAdded += toAdd.Count; tagsRemoved += toRemove.Count;
+                    }
+                }
+                LogSummary($"Tags: +{tagsAdded}, -{tagsRemoved}");
+
+                LogSummary("Phase 4: Syncing Collections...");
+                foreach (var kvp in desiredCollectionsMap)
+                {
+                    string cName = kvp.Key;
+                    var desiredIds = kvp.Value;
+                    if (desiredIds.Count == 0) continue;
+
+                    var existingColl = _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { "BoxSet" }, Name = cName, Recursive = true }).FirstOrDefault();
+
+                    if (existingColl == null)
+                    {
+                        if (dryRun) continue;
+                        var createdRef = await _collectionManager.CreateCollection(new CollectionCreationOptions { Name = cName, IsLocked = false, ItemIdList = desiredIds.ToArray() });
+                        if (createdRef != null) LogSummary($"   -> Created Collection '{cName}'.");
+                    }
+                    else
+                    {
+                        var currentMembers = _libraryManager.GetItemList(new InternalItemsQuery { CollectionIds = new[] { existingColl.InternalId }, Recursive = true, IsVirtualItem = false }).Select(i => i.InternalId).ToHashSet();
+                        var toAdd = desiredIds.Where(id => !currentMembers.Contains(id)).ToList();
+                        if (toAdd.Count > 0 && !dryRun)
                         {
-                            CleanUpTag(tag, debug, dryRun);
+                            await _collectionManager.AddToCollection(existingColl.InternalId, toAdd.ToArray());
+                            LogSummary($"   -> '{cName}': Added {toAdd.Count} items.");
                         }
                     }
                 }
 
-                if (!dryRun) SaveTagHistory(currentTags);
-
-                foreach (var tagName in currentTags) CleanUpTag(tagName, debug, dryRun);
-
-                progress.Report(50);
-                step = 50.0 / (newTagData.Count > 0 ? newTagData.Count : 1);
-
-                foreach (var tagName in currentTags)
+                LogSummary("Phase 5: Cleanup...");
+                var toDelete = previouslyManagedCollections.Where(h => !activeCollections.Contains(h)).ToList();
+                foreach (var oldName in toDelete)
                 {
-                    var itemsToTag = newTagData[tagName];
-                    int addedCount = 0;
-
-                    foreach (var item in itemsToTag)
+                    if (failedFetches.Contains(oldName))
                     {
-                        if (string.IsNullOrEmpty(item.Imdb)) continue;
-
-                        TagCacheManager.Instance.AddToCache($"imdb_{item.Imdb}", tagName);
-
-                        if (MatchAndTag(item, tagName, debug, dryRun)) addedCount++;
+                        LogSummary($"   -> Skipping cleanup of '{oldName}' due to fetch error (Safety).", "Warn");
+                        activeCollections.Add(oldName);
+                        continue;
                     }
 
-                    if (debug || addedCount > 0)
+                    var coll = _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { "BoxSet" }, Name = oldName, Recursive = true }).FirstOrDefault();
+                    if (coll != null && !dryRun)
                     {
-                        string prefix = dryRun ? "[DRY RUN] Would have tagged" : "Tagged";
-                        LogAndTrace($"    -> {prefix} {addedCount} items with '{tagName}'.");
+                        _libraryManager.DeleteItem(coll, new DeleteOptions { DeleteFileLocation = true });
+                        LogSummary($"   -> Deleted '{oldName}' (Not active/scheduled).");
                     }
-
-                    currentProgress += step;
-                    progress.Report(50 + currentProgress);
                 }
 
-                if (!dryRun) TagCacheManager.Instance.Save();
+                if (!dryRun) SaveFileHistory("autotag_collections.txt", activeCollections.ToList());
 
                 progress.Report(100);
-                LastRunStatus = dryRun ? $"Dry Run Finished ({DateTime.Now:HH:mm:ss})" : $"Success ({DateTime.Now:HH:mm:ss})";
-                LogAndTrace("--- Finished ---");
+                LastRunStatus = dryRun ? "Dry Run Complete" : "Success";
+                LogSummary("--- AUTOTAG FINISHED ---");
             }
-            finally
+            catch (Exception ex)
             {
-                IsRunning = false;
+                LastRunStatus = $"Failed: {ex.Message}";
+                LogSummary($"CRITICAL ERROR: {ex.Message}", "Error");
             }
+            finally { IsRunning = false; }
         }
 
-        private void LogAndTrace(string message, string level = "Info")
+        private bool IsScheduleActive(List<DateInterval> intervals)
         {
-            var timestamp = DateTime.Now.ToString("HH:mm:ss");
-            var formattedMsg = $"[{timestamp}] [{level}] {message}";
-
-            lock (ExecutionLog)
+            if (intervals == null || intervals.Count == 0) return true;
+            var now = DateTime.Now;
+            foreach (var interval in intervals)
             {
-                ExecutionLog.Add(formattedMsg);
-                if (ExecutionLog.Count > 2000) ExecutionLog.RemoveAt(0);
-            }
-
-            if (level == "Error") _logger.Error(message);
-            else if (level == "Warn") _logger.Warn(message);
-            else _logger.Info(message);
-        }
-
-        private string GetHistoryFilePath() => Path.Combine(Plugin.Instance.DataFolderPath, "autotag_history.txt");
-
-        private List<string> LoadTagHistory()
-        {
-            try
-            {
-                var path = GetHistoryFilePath();
-                if (File.Exists(path)) return File.ReadAllLines(path).Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)).ToList();
-            }
-            catch { }
-            return new List<string>();
-        }
-
-        private void SaveTagHistory(List<string> tags)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(GetHistoryFilePath()));
-                File.WriteAllLines(GetHistoryFilePath(), tags);
-            }
-            catch { }
-        }
-
-        private void CleanUpTag(string tagName, bool debug, bool dryRun)
-        {
-            var query = new InternalItemsQuery { Recursive = true, Tags = new[] { tagName } };
-            var allItems = _libraryManager.GetItemList(query);
-
-            int count = 0;
-            foreach (var item in allItems)
-            {
-                count++;
-                if (dryRun) continue;
-
-                var master = _libraryManager.GetItemById(item.Id);
-                if (master != null)
-                {
-                    master.RemoveTag(tagName);
-                    _libraryManager.UpdateItem(master, master.Parent, ItemUpdateType.MetadataEdit, null);
-                }
-            }
-
-            if (count > 0 && debug)
-            {
-                string prefix = dryRun ? "[DRY RUN] Would remove" : "[CLEANUP] Removed";
-                LogAndTrace($"      {prefix} '{tagName}' from {count} items.");
-            }
-        }
-
-        private bool MatchAndTag(ExternalItemDto extItem, string tagName, bool debug, bool dryRun)
-        {
-            var target = FindValidItem(new Dictionary<string, string> { { "imdb", extItem.Imdb } });
-
-            if (target != null)
-            {
-                bool hasTag = target.Tags.Contains(tagName, StringComparer.OrdinalIgnoreCase);
-
-                if (dryRun)
-                {
-                    if (debug) LogAndTrace($"      [DRY RUN] Would ADD {tagName} -> {target.Name}");
-                    return true;
-                }
-
-                if (!hasTag)
-                {
-                    var masterItem = _libraryManager.GetItemById(target.Id);
-                    if (masterItem != null)
-                    {
-                        masterItem.AddTag(tagName);
-                        _libraryManager.UpdateItem(masterItem, masterItem.Parent, ItemUpdateType.MetadataEdit, null);
-                        if (debug) LogAndTrace($"      [ADD] {tagName} -> {masterItem.Name}");
-                        return true;
-                    }
-                }
+                bool match = false;
+                if (interval.Type == "Weekly") { if (!string.IsNullOrEmpty(interval.DayOfWeek) && interval.DayOfWeek.IndexOf(now.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase) >= 0) match = true; }
+                else if (interval.Type == "EveryYear") { if (interval.Start.HasValue && interval.End.HasValue) { var s = new DateTime(now.Year, interval.Start.Value.Month, interval.Start.Value.Day); var e = new DateTime(now.Year, interval.End.Value.Month, interval.End.Value.Day); if (e < s) e = e.AddYears(1); if (now.Date >= s.Date && now.Date <= e.Date) match = true; } }
+                else { if ((!interval.Start.HasValue || now.Date >= interval.Start.Value.Date) && (!interval.End.HasValue || now.Date <= interval.End.Value.Date)) match = true; }
+                if (match) return true;
             }
             return false;
         }
 
-        private BaseItem? FindValidItem(Dictionary<string, string> ids)
+        private void LogSummary(string message, string level = "Info")
         {
-            var results = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { "Movie", "Series" },
-                Recursive = true,
-                AnyProviderIdEquals = ids
-            });
-            return results.FirstOrDefault(i => !i.IsVirtualItem && i.LocationType == LocationType.FileSystem);
+            var msg = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            lock (ExecutionLog) { ExecutionLog.Add(msg); if (ExecutionLog.Count > 200) ExecutionLog.RemoveAt(0); }
+            if (level == "Error") _logger.Error(message); else if (level == "Warn") _logger.Warn(message); else _logger.Info(message);
+        }
+
+        private void LogDebug(string message)
+        {
+            var msg = $"[{DateTime.Now:HH:mm:ss}] [DEBUG] {message}";
+            lock (ExecutionLog) { ExecutionLog.Add(msg); if (ExecutionLog.Count > 200) ExecutionLog.RemoveAt(0); }
+        }
+
+        private List<string> LoadFileHistory(string filename)
+        {
+            try { var path = Path.Combine(Plugin.Instance.DataFolderPath, filename); if (File.Exists(path)) return File.ReadAllLines(path).Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)).ToList(); } catch { }
+            return new List<string>();
+        }
+
+        private void SaveFileHistory(string filename, List<string> data)
+        {
+            try { var path = Path.Combine(Plugin.Instance.DataFolderPath, filename); Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllLines(path, data); } catch { }
         }
     }
 }

@@ -437,6 +437,25 @@
                     </div>
                 </div>
 
+                <div class="advanced-section" id="backupSettings">
+                    <div class="advanced-header">
+                        <i class="md-icon expand-icon">expand_more</i>
+                        <span style="margin-left: 10px; font-weight: bold;">Backup & Restore</span>
+                    </div>
+                    <div class="advanced-body" style="display: none;">
+                        <p class="textMuted" style="font-size:0.9em; margin-bottom:15px;">Export your configuration to a JSON file or restore from a backup.</p>
+                        <div style="display:flex; gap:10px;">
+                            <button is="emby-button" type="button" id="btnBackupConfig" class="raised" style="background:#222; border:1px solid #444;">
+                                <i class="md-icon" style="margin-right:5px;">download</i>Download Backup
+                            </button>
+                            <button is="emby-button" type="button" id="btnRestoreConfigTrigger" class="raised" style="background:#222; border:1px solid #444;">
+                                <i class="md-icon" style="margin-right:5px;">upload</i>Restore Backup
+                            </button>
+                            <input type="file" id="fileRestoreConfig" accept=".json" style="display:none;" />
+                        </div>
+                    </div>
+                </div>
+
                 <hr style="border-color: var(--line-color);" />
 
                 <div class="inspiration-container">
@@ -475,7 +494,7 @@
         </div>
 
         <div style="margin-top: 5em; padding-top: 2em; border-top: 1px solid var(--line-color); text-align: center; color: var(--theme-text-secondary);">
-            <p style="margin-bottom: 5px; font-weight: bold;">AutoTag v1.4.0.0</p>
+            <p style="margin-bottom: 5px; font-weight: bold;">AutoTag v2.0.0.0</p>
             <div style="display: flex; justify-content: center; margin-bottom: 15px;">
                 <a href="https://github.com/soderlund91/AutoTag/tree/main" target="_blank" class="simple-link">
                     <i class="md-icon" style="font-size:1.2em;">link</i>

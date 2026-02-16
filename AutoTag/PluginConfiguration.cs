@@ -21,6 +21,10 @@ namespace AutoTag
         public int Limit { get; set; } = 50;
         public List<string> Blacklist { get; set; } = new List<string>();
         public List<DateInterval> ActiveIntervals { get; set; } = new List<DateInterval>();
+
+        public bool EnableCollection { get; set; } = false;
+        public string CollectionName { get; set; } = "";
+        public bool OnlyCollection { get; set; } = false;
     }
 
     public class DateInterval
