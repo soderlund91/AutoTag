@@ -6,7 +6,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     var originalConfigState = null;
 
     var customCss = `
-    <style>
+    <style id="autoTagCustomCss">
         .day-toggle {
             background: rgba(0,0,0,0.2);
             color: var(--theme-text-secondary);
@@ -62,7 +62,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         
         .tag-indicator.schedule {
             color: #00a4dc; 
-            background: rgba(0,164,220,0.1); 
+            background: rgba(255,255,255,0.1); 
             border: 1px solid rgba(0,164,220,0.3);
         }
 
@@ -77,8 +77,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             align-items: center;
         }
 
-        .sort-hidden .btn-sort-up,
-        .sort-hidden .btn-sort-down {
+        .sort-hidden .drag-handle {
             display: none !important;
         }
 
@@ -100,17 +99,177 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             top: 60px;
             z-index: 10000;
         }
+
+        .drag-handle {
+            cursor: grab;
+            margin-right: 15px;
+            color: var(--theme-text-secondary);
+            display: flex;
+            align-items: center;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .tag-row {
+            position: relative;
+            background: var(--theme-background-level2);
+            margin-bottom: 15px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-left: 5px solid #52B54B;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .tag-row.inactive {
+            border-left-color: rgba(255, 255, 255, 0.8);
+        }
+
+        .tag-row.dragging {
+            opacity: 0.4 !important;
+            border: 2px dashed #999 !important;
+            background: var(--theme-background-level1) !important;
+        }
+
+        .sort-placeholder {
+            height: 40px;
+            background-color: transparent;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            transition: height 0.2s;
+        }
+
+        .tag-row.just-moved {
+            animation: moveHighlight 2s ease-out forwards;
+        }
+
+        .tag-row.just-added {
+            animation: addHighlight 2s ease-out forwards;
+        }
+
+        @keyframes moveHighlight {
+            0% {
+                border-top: 1px solid #00a4dc;
+                border-right: 1px solid #00a4dc;
+                border-bottom: 1px solid #00a4dc;
+                box-shadow: 0 0 15px rgba(0,164,220,0.5);
+            }
+            100% {
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            }
+        }
+
+        @keyframes addHighlight {
+            0% {
+                border-top: 1px solid #52B54B;
+                border-right: 1px solid #52B54B;
+                border-bottom: 1px solid #52B54B;
+                box-shadow: 0 0 15px rgba(82,181,75,0.5);
+            }
+            100% {
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            }
+        }
+
+        .control-row {
+            background: rgba(0,0,0,0.15);
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-sub-row {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .control-label {
+            font-size: 0.85em;
+            opacity: 0.5;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+            max-width: 250px;
+        }
+
+        .search-input-wrapper .search-icon {
+            position: absolute;
+            left: 10px;
+            font-size: 1.2em;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #btnClearSearch {
+            position: absolute;
+            right: 8px;
+            cursor: pointer;
+            opacity: 0.5;
+            display: none;
+        }
+
+        #btnClearSearch:hover {
+            opacity: 1;
+            color: #cc3333;
+        }
+
+        #txtSearchTags {
+            width: 100%;
+            background: rgba(255,255,255,0.05) !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            border-radius: 4px !important;
+            padding: 6px 30px 6px 35px !important;
+            color: inherit;
+            font-size: 0.95em;
+        }
+
+        #txtSearchTags:focus {
+            border-color: var(--theme-primary-color) !important;
+            background: rgba(255,255,255,0.1) !important;
+        }
     </style>`;
 
-    function getUrlRowHtml(value) {
+    function getUrlRowHtml(value, limit) {
         var val = value || '';
+        var lim = limit !== undefined ? limit : 0;
         return `
             <div class="url-row" style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
                 <div style="flex-grow:1;">
                     <input is="emby-input" class="txtTagUrl" type="text" label="Trakt/MDBList URL or ID" value="${val}" />
                 </div>
-                <button type="button" is="emby-button" class="raised button-submit btnTestUrl" style="min-width:60px; height:36px; padding:0 10px; font-size:0.8rem; margin:0;" title="Test Source"><span>Test</span></button>
-                <button type="button" is="emby-button" class="raised btnRemoveUrl" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none;" title="Remove URL"><i class="md-icon">remove_circle_outline</i></button>
+                <div style="width:110px;">
+                    <input is="emby-input" class="txtUrlLimit" type="number" label="Max (0=All)" value="${lim}" min="0" />
+                </div>
+                <button type="button" is="emby-button" class="raised button-submit btnTestUrl" style="min-width:60px; height:36px; padding:0 10px; font-size:0.8rem; margin-top:12px;" title="Test Source"><span>Test</span></button>
+                <button type="button" is="emby-button" class="raised btnRemoveUrl" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none; margin-top:12px;" title="Remove URL"><i class="md-icon">remove_circle_outline</i></button>
             </div>`;
     }
 
@@ -208,11 +367,24 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             </div>`;
     }
 
-    function renderTagGroup(tagConfig, container, prepend, index) {
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.tag-row:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    function renderTagGroup(tagConfig, container, prepend, index, isNew) {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
-        var limit = tagConfig.Limit || 50;
-        var urls = tagConfig.Urls || (tagConfig.Url ? [tagConfig.Url] : ['']);
+        var urls = tagConfig.Urls || (tagConfig.Url ? [{ url: tagConfig.Url, limit: tagConfig.Limit !== undefined ? tagConfig.Limit : 0 }] : [{ url: '', limit: 0 }]);
         var blacklist = (tagConfig.Blacklist || []).join(', ');
         var intervals = tagConfig.ActiveIntervals || [];
         var idx = typeof index !== 'undefined' ? index : 9999;
@@ -234,14 +406,19 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             indicatorsHtml += `<span class="tag-indicator collection"><i class="md-icon" style="font-size:1.1em;">library_books</i> Collection</span>`;
         }
 
+        var initialStyle = isNew ? 'display:block;' : 'display:none;';
+        var initialIcon = isNew ? 'expand_less' : 'expand_more';
+
+        var inactiveClass = tagConfig.Active === false ? "inactive" : "";
+        var newClass = isNew ? "just-added" : "";
+
         var html = `
-        <div class="tag-row" data-index="${idx}" data-last-modified="${lastMod}" data-dirty="false">
+        <div class="tag-row ${inactiveClass} ${newClass}" data-index="${idx}" data-last-modified="${lastMod}" data-dirty="false">
             <div class="tag-header" style="display:flex; align-items:center; justify-content:space-between; padding:10px; cursor:pointer;">
                 <div style="display:flex; align-items:center;">
                     <div class="header-actions" style="margin-right:15px; display:flex; align-items:center;" onclick="event.stopPropagation()">
-                        <div style="display:flex; flex-direction:column; margin-right:8px;">
-                            <i class="md-icon btn-sort-up" style="cursor:pointer; font-size:1.4em; line-height:0.8; opacity:0.7;">keyboard_arrow_up</i>
-                            <i class="md-icon btn-sort-down" style="cursor:pointer; font-size:1.4em; line-height:0.8; opacity:0.7;">keyboard_arrow_down</i>
+                        <div class="drag-handle">
+                            <i class="md-icon">reorder</i>
                         </div>
                         <span class="lblActiveStatus" style="margin-right:8px; font-size:0.9em; font-weight:bold; color:${activeColor}; min-width:60px; text-align:right;">${activeText}</span>
                         <label class="checkboxContainer" style="margin:0;">
@@ -255,23 +432,20 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         <span class="badge-container" style="display:flex; align-items:center;">${indicatorsHtml}</span>
                     </div>
                 </div>
-                <i class="md-icon expand-icon">expand_more</i>
+                <i class="md-icon expand-icon">${initialIcon}</i>
             </div>
-            <div class="tag-body" style="display:none; padding:15px; border-top:1px solid rgba(255,255,255,0.1);">
+            <div class="tag-body" style="${initialStyle} padding:15px; border-top:1px solid rgba(255,255,255,0.1);">
                 <div class="tag-tabs" style="display: flex; gap: 20px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <div class="tag-tab active" data-tab="general" style="padding: 8px 0; cursor: pointer; font-weight: bold; border-bottom: 2px solid #52B54B;">Source</div>
                     <div class="tag-tab" data-tab="schedule" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Schedule</div>
                     <div class="tag-tab" data-tab="collection" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Collection</div>
-                    <div class="tag-tab" data-tab="advanced" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Advanced</div>
+                    <div class="tag-tab" data-tab="advanced" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Blacklist</div>
                 </div>
                 
                 <div class="tab-content general-tab">
-                    <div style="display:flex; gap:20px; align-items:center;">
-                        <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
-                        <div class="inputContainer" style="width:120px;"><input is="emby-input" class="txtTagLimit" type="number" label="Max Items" value="${limit}" min="1" /></div>
-                    </div>
+                    <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
                     <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
-                    <div class="url-list-container">${urls.map(u => getUrlRowHtml(u)).join('')}</div>
+                    <div class="url-list-container">${urls.map(u => getUrlRowHtml(u.url, u.limit)).join('')}</div>
                     <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
                 </div>
 
@@ -320,29 +494,23 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         if (prepend) container.insertAdjacentHTML('afterbegin', html);
         else container.insertAdjacentHTML('beforeend', html);
-        setupRowEvents(prepend ? container.firstElementChild : container.lastElementChild);
+
+        var newRow = prepend ? container.firstElementChild : container.lastElementChild;
+        setupRowEvents(newRow);
+
+        if (isNew) {
+            setTimeout(() => { newRow.classList.remove('just-added'); }, 2000);
+        }
     }
 
     function setupRowEvents(row) {
-        row.querySelector('.btn-sort-up').addEventListener('click', e => {
-            e.stopPropagation();
-            var p = row.previousElementSibling;
-            if (p) { row.parentNode.insertBefore(row, p); checkGlobalDirtyState(); }
-        });
-        row.querySelector('.btn-sort-down').addEventListener('click', e => {
-            e.stopPropagation();
-            var n = row.nextElementSibling;
-            if (n) { row.parentNode.insertBefore(n, row); checkGlobalDirtyState(); }
-        });
-
         var markDirty = function () { row.dataset.dirty = 'true'; checkGlobalDirtyState(); };
-        row.querySelectorAll('input, textarea, select').forEach(el => {
-            el.addEventListener('input', markDirty);
-            el.addEventListener('change', markDirty);
-        });
-
-        row.querySelectorAll('.day-toggle').forEach(el => {
-            el.addEventListener('click', markDirty);
+        ['input', 'change', 'keyup', 'paste'].forEach(function (evt) {
+            row.addEventListener(evt, function (e) {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+                    setTimeout(markDirty, 10);
+                }
+            }, true);
         });
 
         function updateBadges(row) {
@@ -396,6 +564,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         row.addEventListener('click', e => {
             if (e.target.classList.contains('day-toggle')) {
                 e.target.classList.toggle('active');
+                markDirty();
             }
         });
 
@@ -411,9 +580,16 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         chk.addEventListener('change', function () {
             lblStatus.textContent = this.checked ? "Active" : "Disabled";
             lblStatus.style.color = this.checked ? "#52B54B" : "var(--theme-text-secondary)";
+
+            if (this.checked) row.classList.remove('inactive');
+            else row.classList.add('inactive');
         });
 
-        row.querySelector('.btnAddUrl').addEventListener('click', () => { row.querySelector('.url-list-container').insertAdjacentHTML('beforeend', getUrlRowHtml('')); updateCount(row); markDirty(); });
+        row.querySelector('.btnAddUrl').addEventListener('click', () => {
+            row.querySelector('.url-list-container').insertAdjacentHTML('beforeend', getUrlRowHtml('', 0));
+            updateCount(row);
+            markDirty();
+        });
 
         row.querySelector('.btnAddDate').addEventListener('click', () => {
             row.querySelector('.date-list-container').insertAdjacentHTML('beforeend', getDateRowHtml({ Type: 'SpecificDate' }));
@@ -422,7 +598,11 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         });
 
         row.addEventListener('click', e => {
-            if (e.target.closest('.btnRemoveUrl')) { e.target.closest('.url-row').remove(); updateCount(row); markDirty(); }
+            if (e.target.closest('.btnRemoveUrl')) {
+                e.target.closest('.url-row').remove();
+                updateCount(row);
+                markDirty();
+            }
 
             if (e.target.closest('.btnRemoveDate')) {
                 e.target.closest('.date-row').remove();
@@ -431,19 +611,70 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             }
 
             if (e.target.closest('.btnRemoveGroup')) {
-                if (confirm("Delete this tag group?")) { row.remove(); checkGlobalDirtyState(); }
+                if (confirm("Delete this tag group?")) {
+                    row.remove();
+                    checkGlobalDirtyState();
+                }
             }
 
             var btnTest = e.target.closest('.btnTestUrl');
             if (btnTest) {
-                var url = btnTest.closest('.url-row').querySelector('.txtTagUrl').value;
+                var uRow = btnTest.closest('.url-row');
+                var url = uRow.querySelector('.txtTagUrl').value;
+                var limitStr = uRow.querySelector('.txtUrlLimit').value;
+                var limit = parseInt(limitStr, 10);
+                if (isNaN(limit)) limit = 0;
                 if (!url) return;
+
+                var effLimit = limit <= 0 ? 10000 : limit;
                 btnTest.disabled = true;
-                window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: 1000 })).then(r => window.Dashboard.alert(r.Message)).finally(() => btnTest.disabled = false);
+                window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: effLimit })).then(r => window.Dashboard.alert(r.Message)).finally(() => btnTest.disabled = false);
             }
         });
 
         row.querySelector('.txtTagName').addEventListener('input', function () { row.querySelector('.tag-title').textContent = this.value || 'New Tag'; });
+
+        var handle = row.querySelector('.drag-handle');
+
+        handle.addEventListener('mousedown', () => {
+            if (localStorage.getItem('AutoTag_SortBy') === 'Manual') {
+                row.setAttribute('draggable', 'true');
+            }
+        });
+
+        handle.addEventListener('mouseup', () => {
+            row.setAttribute('draggable', 'false');
+        });
+
+        row.addEventListener('dragstart', (e) => {
+            if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') { e.preventDefault(); return; }
+
+            document.querySelectorAll('.tag-body').forEach(b => b.style.display = 'none');
+            document.querySelectorAll('.expand-icon').forEach(i => i.innerText = 'expand_more');
+
+            row.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', '');
+
+            setTimeout(() => {
+                row.style.display = 'none';
+            }, 0);
+        });
+
+        row.addEventListener('dragend', () => {
+            row.style.display = '';
+
+            row.classList.remove('dragging');
+            row.setAttribute('draggable', 'false');
+
+            var existingPlaceholder = document.querySelector('.sort-placeholder');
+            if (existingPlaceholder) existingPlaceholder.remove();
+
+            row.classList.add('just-moved');
+            setTimeout(() => { row.classList.remove('just-moved'); }, 2000);
+
+            checkGlobalDirtyState();
+        });
     }
 
     function updateCount(row) { row.querySelector('.tag-status').textContent = row.querySelectorAll('.txtTagUrl').length + " SOURCE(S)"; }
@@ -502,11 +733,14 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         else container.classList.remove('sort-hidden');
     }
 
-    function getUiConfig(view) {
+    function getUiConfig(view, forComparison) {
         var flatTags = [];
         view.querySelectorAll('.tag-row').forEach(row => {
-            var name = row.querySelector('.txtTagName').value, active = row.querySelector('.chkTagActive').checked, limit = parseInt(row.querySelector('.txtTagLimit').value) || 50;
-            var bl = row.querySelector('.txtTagBlacklist').value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            var name = row.querySelector('.txtTagName').value;
+            var active = row.querySelector('.chkTagActive').checked;
+
+            var blInput = row.querySelector('.txtTagBlacklist');
+            var bl = blInput ? blInput.value.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
 
             var enableColl = row.querySelector('.chkEnableCollection').checked;
             var onlyColl = row.querySelector('.chkOnlyCollection').checked;
@@ -533,17 +767,31 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 intervals.push({ Type: type, Start: s || null, End: e || null, DayOfWeek: days });
             });
 
-            row.querySelectorAll('.txtTagUrl').forEach(u => {
-                if (u.value) flatTags.push({
+            var currentLastMod = row.dataset.lastModified || new Date().toISOString();
+            if (forComparison) {
+                currentLastMod = "CONSTANT_FOR_COMPARISON";
+            } else if (row.dataset.dirty === 'true') {
+                currentLastMod = new Date().toISOString();
+            }
+
+            row.querySelectorAll('.url-row').forEach(uRow => {
+                var urlVal = uRow.querySelector('.txtTagUrl').value.trim();
+
+                var limitStr = uRow.querySelector('.txtUrlLimit').value;
+                var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
+                if (isNaN(limitVal)) limitVal = 0;
+
+                if (urlVal) flatTags.push({
                     Tag: name,
-                    Url: u.value.trim(),
+                    Url: urlVal,
                     Active: active,
-                    Limit: limit,
+                    Limit: limitVal,
                     Blacklist: bl,
                     ActiveIntervals: intervals,
                     EnableCollection: enableColl,
                     CollectionName: collName,
-                    OnlyCollection: onlyColl
+                    OnlyCollection: onlyColl,
+                    LastModified: currentLastMod
                 });
             });
         });
@@ -560,7 +808,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     function checkGlobalDirtyState() {
         var view = document.querySelector('#AutoTagConfigPage');
         if (!view || !originalConfigState) return;
-        var current = JSON.stringify(getUiConfig(view));
+
+        var current = JSON.stringify(getUiConfig(view, true));
         var btnSave = view.querySelector('.btn-save');
 
         if (btnSave) {
@@ -588,10 +837,73 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         }
     }
 
+    function applyFilters(view) {
+        var container = view.querySelector('#tagListContainer');
+        var rows = container.querySelectorAll('.tag-row');
+
+        var showScheduleOnly = view.querySelector('#chkFilterSchedule').checked;
+        var showCollectionOnly = view.querySelector('#chkFilterCollection').checked;
+        var searchTerm = (view.querySelector('#txtSearchTags').value || "").toLowerCase();
+
+        rows.forEach(row => {
+            var tagName = (row.querySelector('.txtTagName').value || "").toLowerCase();
+            var hasSchedule = row.querySelectorAll('.date-row').length > 0;
+            var hasCollection = row.querySelector('.chkEnableCollection').checked;
+
+            var matchesSearch = tagName.includes(searchTerm);
+            var matchesFilter = true;
+            if (showScheduleOnly && showCollectionOnly) {
+                matchesFilter = (hasSchedule || hasCollection);
+            } else if (showScheduleOnly) {
+                matchesFilter = hasSchedule;
+            } else if (showCollectionOnly) {
+                matchesFilter = hasCollection;
+            }
+
+            row.style.display = (matchesSearch && matchesFilter) ? 'block' : 'none';
+        });
+    }
+
     return function (view) {
         view.addEventListener('viewshow', () => {
             if (!document.getElementById('autoTagCustomCss')) {
-                document.body.insertAdjacentHTML('beforeend', customCss.replace('<style>', '<style id="autoTagCustomCss">'));
+                document.body.insertAdjacentHTML('beforeend', customCss);
+            }
+
+            var container = view.querySelector('#tagListContainer');
+            if (container) {
+                let rafId = null;
+                container.addEventListener('dragover', (e) => {
+                    if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
+                    e.preventDefault();
+                    if (rafId) return;
+                    rafId = requestAnimationFrame(() => {
+                        const draggingRow = document.querySelector('.tag-row.dragging');
+                        if (!draggingRow) { rafId = null; return; }
+                        const afterElement = getDragAfterElement(container, e.clientY);
+                        var placeholder = document.querySelector('.sort-placeholder');
+                        if (!placeholder) {
+                            placeholder = document.createElement('div');
+                            placeholder.className = 'sort-placeholder';
+                        }
+                        if (afterElement == null) {
+                            if (placeholder.nextElementSibling !== null) container.appendChild(placeholder);
+                        } else {
+                            if (placeholder.nextElementSibling !== afterElement) container.insertBefore(placeholder, afterElement);
+                        }
+                        rafId = null;
+                    });
+                });
+                container.addEventListener('drop', (e) => {
+                    if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
+                    e.preventDefault();
+                    const draggingRow = document.querySelector('.tag-row.dragging');
+                    const placeholder = document.querySelector('.sort-placeholder');
+                    if (draggingRow && placeholder) {
+                        container.insertBefore(draggingRow, placeholder);
+                        placeholder.remove();
+                    }
+                });
             }
 
             view.insertAdjacentHTML('afterbegin', '<div class="dry-run-warning"><i class="md-icon" style="font-size:1.4em;"></i>AUTOTAG<br>DRY RUN MODE IS ACTIVE - NO CHANGES WILL BE SAVED</div>');
@@ -618,22 +930,11 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             view.querySelector('#btnCloseHelp').addEventListener('click', () => helpOverlay.classList.remove('modal-visible'));
             helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('modal-visible'); });
 
-            var advHeader = view.querySelector('#advancedSettings .advanced-header');
-            if (advHeader) {
-                advHeader.addEventListener('click', function () {
-                    var body = view.querySelector('#advancedSettings .advanced-body');
-                    var icon = view.querySelector('#advancedSettings .expand-icon');
-                    var isHidden = body.style.display === 'none';
-                    body.style.display = isHidden ? 'block' : 'none';
-                    icon.innerText = isHidden ? 'expand_less' : 'expand_more';
-                });
-            }
-
-            var bkHeader = view.querySelector('#backupSettings .advanced-header');
-            if (bkHeader) {
-                bkHeader.addEventListener('click', function () {
-                    var body = view.querySelector('#backupSettings .advanced-body');
-                    var icon = view.querySelector('#backupSettings .expand-icon');
+            var globalSettingsHeader = view.querySelector('#globalSettings .advanced-header');
+            if (globalSettingsHeader) {
+                globalSettingsHeader.addEventListener('click', function () {
+                    var body = view.querySelector('#globalSettings .advanced-body');
+                    var icon = view.querySelector('#globalSettings .expand-icon');
                     var isHidden = body.style.display === 'none';
                     body.style.display = isHidden ? 'block' : 'none';
                     icon.innerText = isHidden ? 'expand_less' : 'expand_more';
@@ -643,27 +944,75 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var headerAction = view.querySelector('.sectionTitleContainer');
             if (headerAction && !view.querySelector('#cbSortTags')) {
                 var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
-                var sortHtml = `
-                <div style="margin-right: 15px; display:flex; align-items:center;">
-                    <span style="margin-right:10px; font-size:0.9em; opacity:0.7;">Sort by:</span>
-                    <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); padding:5px; border-radius:4px;">
+                headerAction.style.display = "flex";
+                headerAction.style.alignItems = "center";
+                headerAction.style.justifyContent = "space-between";
+                headerAction.style.width = "100%";
+                headerAction.style.marginBottom = "10px";
+
+                var controlRowHtml = `
+                <div class="control-row" style="flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; justify-content: flex-start !important; padding: 10px 15px !important; gap: 0 !important;">
+                    
+                    <span class="control-label" style="opacity:0.7; margin-right: 10px; flex-shrink: 0;">Sort:</span>
+
+                    <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); padding:5px; border-radius:4px; font-size:0.9em; cursor:pointer; width: 80px; margin-right: 0px;">
                         <option value="Manual" ${savedSort === 'Manual' ? 'selected' : ''}>Manual</option>
-                        <option value="Name" ${savedSort === 'Name' ? 'selected' : ''}>Name (A-Z)</option>
-                        <option value="Active" ${savedSort === 'Active' ? 'selected' : ''}>Status (Active First)</option>
-                        <option value="LatestEdited" ${savedSort === 'LatestEdited' ? 'selected' : ''}>Latest Edited</option>
+                        <option value="Name" ${savedSort === 'Name' ? 'selected' : ''}>Name</option>
+                        <option value="Active" ${savedSort === 'Active' ? 'selected' : ''}>Status</option>
+                        <option value="LatestEdited" ${savedSort === 'LatestEdited' ? 'selected' : ''}>Latest</option>
                     </select>
+
+                    <div style="width: 1px; height: 25px; background: rgba(255,255,255,0.1); margin-right: 10px;"></div>
+
+                    <span class="control-label" style="opacity:0.7; margin-right: 20px; flex-shrink: 0;"> | Filters:</span>
+                    
+                    <div class="search-input-wrapper" style="width: 200px !important; margin-right: 10px; flex-shrink: 0;">
+                        <i class="md-icon search-icon">search</i>
+                        <input type="text" id="txtSearchTags" placeholder="Search..." autocomplete="off" style="padding-left: 28px !important; background: rgba(0,0,0,0.2) !important; border: 1px solid rgba(255,255,255,0.1) !important; width: 100% !important;" />
+                        <i class="md-icon" id="btnClearSearch">close</i>
+                    </div>
+
+                    <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 10px 0 0 !important; cursor: pointer !important; width: auto !important;">
+                        <input type="checkbox" id="chkFilterSchedule" is="emby-checkbox" />
+                        <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Schedule</span>
+                    </label>
+
+                    <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 !important; cursor: pointer !important; width: auto !important;">
+                        <input type="checkbox" id="chkFilterCollection" is="emby-checkbox" />
+                        <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Collection</span>
+                    </label>
+
                 </div>`;
-                headerAction.querySelector('.sectionTitle').style.marginRight = "auto";
-                headerAction.querySelector('#btnAddTag').insertAdjacentHTML('beforebegin', sortHtml);
+
+                headerAction.insertAdjacentHTML('afterend', controlRowHtml);
+
+                const txtSearch = view.querySelector('#txtSearchTags');
+                const btnClear = view.querySelector('#btnClearSearch');
+
+                txtSearch.addEventListener('input', () => {
+                    btnClear.style.display = txtSearch.value ? 'block' : 'none';
+                    applyFilters(view);
+                });
+
+                btnClear.addEventListener('click', () => {
+                    txtSearch.value = '';
+                    btnClear.style.display = 'none';
+                    txtSearch.focus();
+                    applyFilters(view);
+                });
 
                 view.querySelector('#cbSortTags').addEventListener('change', function () {
                     localStorage.setItem('AutoTag_SortBy', this.value);
                     sortRows(view.querySelector('#tagListContainer'), this.value);
                 });
+
+                view.querySelector('#chkFilterSchedule').addEventListener('change', () => applyFilters(view));
+                view.querySelector('#chkFilterCollection').addEventListener('change', () => applyFilters(view));
             }
 
             view.querySelector('#btnAddTag').addEventListener('click', () => {
-                renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50 }, view.querySelector('#tagListContainer'), true);
+                renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, view.querySelector('#tagListContainer'), true, undefined, true);
+                applyFilters(view);
                 checkGlobalDirtyState();
             });
 
@@ -673,30 +1022,30 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
                 view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
                 view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
+                if (view.querySelector('#txtSearchTags')) {
+                    view.querySelector('#txtSearchTags').value = '';
+                    view.querySelector('#btnClearSearch').style.display = 'none';
+                }
+                if (view.querySelector('#chkFilterSchedule')) view.querySelector('#chkFilterSchedule').checked = false;
+                if (view.querySelector('#chkFilterCollection')) view.querySelector('#chkFilterCollection').checked = false;
+
                 var grouped = {};
                 (config.Tags || []).forEach(t => {
                     if (!grouped[t.Tag]) grouped[t.Tag] = {
-                        Tag: t.Tag,
-                        Urls: [],
-                        Active: t.Active,
-                        Limit: t.Limit,
-                        Blacklist: t.Blacklist,
-                        ActiveIntervals: t.ActiveIntervals,
-                        EnableCollection: t.EnableCollection,
-                        CollectionName: t.CollectionName,
-                        OnlyCollection: t.OnlyCollection,
-                        LastModified: t.LastModified
+                        Tag: t.Tag, Urls: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                        EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified
                     };
-                    if (t.Url) grouped[t.Tag].Urls.push(t.Url);
+                    if (t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
                 });
+
                 var keys = Object.keys(grouped);
                 keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
-                if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50 }, container, false, 0);
+                if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, container, false, 0);
 
                 var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
                 sortRows(container, savedSort);
-
-                originalConfigState = JSON.stringify(getUiConfig(view));
+                applyFilters(view);
+                originalConfigState = JSON.stringify(getUiConfig(view, true));
                 checkGlobalDirtyState();
                 updateDryRunWarning();
             });
@@ -707,59 +1056,44 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     var blob = new Blob([json], { type: "application/json" });
                     var url = URL.createObjectURL(blob);
                     var a = document.createElement('a');
-                    a.href = url;
-                    a.download = `AutoTag_Backup_${new Date().toISOString().split('T')[0]}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    a.href = url; a.download = `AutoTag_Backup_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                 });
             });
 
             var fileInput = view.querySelector('#fileRestoreConfig');
             view.querySelector('#btnRestoreConfigTrigger').addEventListener('click', () => fileInput.click());
-
             fileInput.addEventListener('change', function (e) {
-                var file = e.target.files[0];
-                if (!file) return;
-
+                var file = e.target.files[0]; if (!file) return;
                 var reader = new FileReader();
                 reader.onload = function (e) {
                     try {
                         var config = JSON.parse(e.target.result);
-
                         view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
                         view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
                         view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
                         view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
 
-                        var container = view.querySelector('#tagListContainer');
-                        container.innerHTML = '';
+                        var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
                         var grouped = {};
                         (config.Tags || []).forEach(t => {
                             if (!grouped[t.Tag]) grouped[t.Tag] = {
-                                Tag: t.Tag,
-                                Urls: [],
-                                Active: t.Active,
-                                Limit: t.Limit,
-                                Blacklist: t.Blacklist,
-                                ActiveIntervals: t.ActiveIntervals,
-                                EnableCollection: t.EnableCollection,
-                                CollectionName: t.CollectionName,
-                                OnlyCollection: t.OnlyCollection,
-                                LastModified: t.LastModified
+                                Tag: t.Tag, Urls: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified
                             };
-                            if (t.Url) grouped[t.Tag].Urls.push(t.Url);
+                            if (t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
                         });
+
                         var keys = Object.keys(grouped);
                         keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
-                        if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [''], Active: true, Limit: 50 }, container, false, 0);
+                        if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 50 }], Active: true }, container, false, 0);
 
-                        window.Dashboard.alert("Configuration loaded! Review settings and click 'Save Settings' to apply.");
+                        applyFilters(view);
+
+                        originalConfigState = JSON.stringify(getUiConfig(view, true));
+                        window.Dashboard.alert("Configuration loaded!");
                         checkGlobalDirtyState();
-                    } catch (err) {
-                        window.Dashboard.alert("Failed to parse configuration file.");
-                    }
+                    } catch (err) { window.Dashboard.alert("Failed to parse configuration file."); }
                     fileInput.value = '';
                 };
                 reader.readAsText(file);
@@ -770,68 +1104,21 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         view.querySelector('.AutoTagForm').addEventListener('submit', e => {
             e.preventDefault();
-            var flatTags = [];
-            view.querySelectorAll('.tag-row').forEach(row => {
-                var name = row.querySelector('.txtTagName').value, active = row.querySelector('.chkTagActive').checked, limit = parseInt(row.querySelector('.txtTagLimit').value) || 50;
-                var bl = row.querySelector('.txtTagBlacklist').value.split(',').map(s => s.trim()).filter(s => s.length > 0);
-
-                var enableColl = row.querySelector('.chkEnableCollection').checked;
-                var onlyColl = row.querySelector('.chkOnlyCollection').checked;
-                var collName = row.querySelector('.txtCollectionName').value;
-
-                var intervals = [];
-                row.querySelectorAll('.date-row').forEach(dr => {
-                    var type = dr.querySelector('.selDateType').value;
-                    var s = null, e = null, days = "";
-
-                    if (type === 'SpecificDate') {
-                        s = dr.querySelector('.txtFullStartDate').value;
-                        e = dr.querySelector('.txtFullEndDate').value;
-                    } else if (type === 'EveryYear') {
-                        var sM = dr.querySelector('.selStartMonth').value, sD = dr.querySelector('.selStartDay').value;
-                        var eM = dr.querySelector('.selEndMonth').value, eD = dr.querySelector('.selEndDay').value;
-                        s = `2000-${sM.padStart(2, '0')}-${sD.padStart(2, '0')}`;
-                        e = `2000-${eM.padStart(2, '0')}-${eD.padStart(2, '0')}`;
-                    } else if (type === 'Weekly') {
-                        var activeBtns = Array.from(dr.querySelectorAll('.day-toggle.active')).map(b => b.dataset.day);
-                        days = activeBtns.join(',');
-                    }
-
-                    intervals.push({ Type: type, Start: s || null, End: e || null, DayOfWeek: days });
-                });
-
-                var currentLastMod = row.dataset.lastModified || new Date().toISOString();
-                if (row.dataset.dirty === 'true') {
-                    currentLastMod = new Date().toISOString();
-                    row.dataset.lastModified = currentLastMod;
-                    row.dataset.dirty = 'false';
-                }
-
-                row.querySelectorAll('.txtTagUrl').forEach(u => {
-                    if (u.value) flatTags.push({
-                        Tag: name,
-                        Url: u.value.trim(),
-                        Active: active,
-                        Limit: limit,
-                        Blacklist: bl,
-                        ActiveIntervals: intervals,
-                        EnableCollection: enableColl,
-                        CollectionName: collName,
-                        OnlyCollection: onlyColl,
-                        LastModified: currentLastMod
-                    });
-                });
-            });
+            var configObj = getUiConfig(view, false);
 
             window.ApiClient.getPluginConfiguration(pluginId).then(config => {
-                config.TraktClientId = view.querySelector('#txtTraktClientId').value;
-                config.MdblistApiKey = view.querySelector('#txtMdblistApiKey').value;
-                config.ExtendedConsoleOutput = view.querySelector('#chkExtendedConsoleOutput').checked;
-                config.DryRunMode = view.querySelector('#chkDryRunMode').checked;
-                config.Tags = flatTags;
+                config.TraktClientId = configObj.TraktClientId;
+                config.MdblistApiKey = configObj.MdblistApiKey;
+                config.ExtendedConsoleOutput = configObj.ExtendedConsoleOutput;
+                config.DryRunMode = configObj.DryRunMode;
+                config.Tags = configObj.Tags;
+
                 window.ApiClient.updatePluginConfiguration(pluginId, config).then(r => {
                     window.Dashboard.processPluginConfigurationUpdateResult(r);
-                    originalConfigState = JSON.stringify(getUiConfig(view));
+
+                    view.querySelectorAll('.tag-row').forEach(row => { row.dataset.dirty = 'false'; });
+
+                    originalConfigState = JSON.stringify(getUiConfig(view, true));
                     var btnSave = view.querySelector('.btn-save');
                     if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; }
                     updateDryRunWarning();

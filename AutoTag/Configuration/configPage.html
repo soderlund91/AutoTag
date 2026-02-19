@@ -377,7 +377,6 @@
     <div class="content-primary">
         <div class="verticalSection">
             <div style="display:flex; align-items:center; margin-bottom: 10px; gap: 10px;">
-                <h2 class="sectionTitle" style="margin:0;">Settings</h2>
 
                 <button type="button" is="emby-button" class="btn-help-trigger" id="btnOpenHelp" title="Open Setup Guide">
                     <i class="md-icon">help</i>
@@ -396,29 +395,33 @@
                 </div>
             </div>
 
-            <p class="textMuted">Configure API keys and sources for automatic tagging.</p>
-
             <form class="AutoTagForm">
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="txtTraktClientId" label="Trakt Client ID" />
-                    <div class="fieldDescription">
-                        Create app at <a href="https://trakt.tv/oauth/applications" target="_blank" class="help-link">Trakt.tv</a>.
-                    </div>
-                </div>
 
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="txtMdblistApiKey" label="MDBList API Key" />
-                    <div class="fieldDescription">
-                        Get key at <a href="https://mdblist.com/preferences/" target="_blank" class="help-link">MDBList Preferences</a>.
-                    </div>
-                </div>
-
-                <div class="advanced-section" id="advancedSettings">
+                <div class="advanced-section" id="globalSettings">
                     <div class="advanced-header">
                         <i class="md-icon expand-icon">expand_more</i>
-                        <span style="margin-left: 10px; font-weight: bold;">Advanced Settings</span>
+                        <span style="margin-left: 10px; font-weight: bold; font-size: 1.1em;">Settings</span>
                     </div>
                     <div class="advanced-body" style="display: none;">
+
+                        <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 1.05em; color: #52B54B; text-transform: uppercase; letter-spacing: 1px;">Basic Settings</h3>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="txtTraktClientId" label="Trakt Client ID" />
+                            <div class="fieldDescription">
+                                Create app at <a href="https://trakt.tv/oauth/applications" target="_blank" class="help-link">Trakt.tv</a>.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="txtMdblistApiKey" label="MDBList API Key" />
+                            <div class="fieldDescription">
+                                Get key at <a href="https://mdblist.com/preferences/" target="_blank" class="help-link">MDBList Preferences</a>.
+                            </div>
+                        </div>
+
+                        <hr style="border-color: rgba(255,255,255,0.05); margin: 25px 0;" />
+
+                        <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 1.05em; color: #52B54B; text-transform: uppercase; letter-spacing: 1px;">Advanced Settings</h3>
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label>
                                 <input is="emby-checkbox" type="checkbox" id="chkExtendedConsoleOutput" />
@@ -434,15 +437,10 @@
                             </label>
                             <div class="fieldDescription">Simulate process without modifying database.</div>
                         </div>
-                    </div>
-                </div>
 
-                <div class="advanced-section" id="backupSettings">
-                    <div class="advanced-header">
-                        <i class="md-icon expand-icon">expand_more</i>
-                        <span style="margin-left: 10px; font-weight: bold;">Backup & Restore</span>
-                    </div>
-                    <div class="advanced-body" style="display: none;">
+                        <hr style="border-color: rgba(255,255,255,0.05); margin: 25px 0;" />
+
+                        <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 1.05em; color: #52B54B; text-transform: uppercase; letter-spacing: 1px;">Backup & Restore</h3>
                         <p class="textMuted" style="font-size:0.9em; margin-bottom:15px;">Export your configuration to a JSON file or restore from a backup.</p>
                         <div style="display:flex; gap:10px;">
                             <button is="emby-button" type="button" id="btnBackupConfig" class="raised" style="background:#222; border:1px solid #444;">
@@ -453,6 +451,7 @@
                             </button>
                             <input type="file" id="fileRestoreConfig" accept=".json" style="display:none;" />
                         </div>
+
                     </div>
                 </div>
 
@@ -472,7 +471,7 @@
                 </div>
 
                 <div class="sectionTitleContainer flex align-items-center" style="margin-bottom: 1em; margin-top: 2em;">
-                    <h2 class="sectionTitle" style="margin-bottom:0;">Tag Sources</h2>
+                    <h2 class="sectionTitle" style="margin-bottom:0;">Sources</h2>
                     <button is="emby-button" type="button" id="btnAddTag" class="raised button-submit mb025" style="margin-left: auto;">
                         <span>+ Add New Source</span>
                     </button>
@@ -494,7 +493,7 @@
         </div>
 
         <div style="margin-top: 5em; padding-top: 2em; border-top: 1px solid var(--line-color); text-align: center; color: var(--theme-text-secondary);">
-            <p style="margin-bottom: 5px; font-weight: bold;">AutoTag v2.1.0.0</p>
+            <p style="margin-bottom: 5px; font-weight: bold;">AutoTag v2.2.0.0</p>
             <div style="display: flex; justify-content: center; margin-bottom: 15px;">
                 <a href="https://github.com/soderlund91/AutoTag/tree/main" target="_blank" class="simple-link">
                     <i class="md-icon" style="font-size:1.2em;">link</i>

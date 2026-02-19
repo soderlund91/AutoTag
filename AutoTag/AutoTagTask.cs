@@ -123,16 +123,25 @@ namespace AutoTag
 
                     try
                     {
-                        var items = await fetcher.FetchItems(tagConfig.Url, tagConfig.Limit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
+                        int effectiveLimit = tagConfig.Limit <= 0 ? 10000 : tagConfig.Limit;
+                        var items = await fetcher.FetchItems(tagConfig.Url, effectiveLimit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
 
                         if (items.Count > 0)
                         {
-                            if (items.Count > tagConfig.Limit) items = items.Take(tagConfig.Limit).ToList();
+                            if (items.Count > effectiveLimit) items = items.Take(effectiveLimit).ToList();
                             int matchCount = 0;
+
+                            var blacklist = new HashSet<string>(tagConfig.Blacklist ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
                             foreach (var extItem in items)
                             {
                                 if (string.IsNullOrEmpty(extItem.Imdb)) continue;
+
+                                if (blacklist.Contains(extItem.Imdb))
+                                {
+                                    if (debug) LogDebug($"Skipping '{extItem.Name}' ({extItem.Imdb}) - Item is blacklisted.");
+                                    continue;
+                                }
 
                                 if (!tagConfig.OnlyCollection)
                                     TagCacheManager.Instance.AddToCache($"imdb_{extItem.Imdb}", tagName);

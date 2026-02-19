@@ -9,9 +9,9 @@
 		<AssemblyName>AutoTag</AssemblyName>
 		<RootNamespace>AutoTag</RootNamespace>
 		
-		<Version>2.1.0.0</Version>
-		<FileVersion>2.1.0.0</FileVersion>
-		<AssemblyVersion>2.1.0.0</AssemblyVersion>
+		<Version>2.2.0.0</Version>
+		<FileVersion>2.2.0.0</FileVersion>
+		<AssemblyVersion>2.2.0.0</AssemblyVersion>
 
 		<Product>AutoTag</Product>
 		
