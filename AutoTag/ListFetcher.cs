@@ -38,7 +38,7 @@ namespace AutoTag
         {
             var cleanUrl = listUrl.Trim().TrimEnd('/');
             if (!cleanUrl.EndsWith("/json")) cleanUrl += "/json";
-            var apiUrl = $"{cleanUrl}?apikey={apiKey}";
+            var apiUrl = $"{cleanUrl}?apikey={apiKey}&_={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
             try
             {
                 using (var stream = await _httpClient.Get(new HttpRequestOptions { Url = apiUrl, CancellationToken = cancellationToken }))
@@ -88,7 +88,8 @@ namespace AutoTag
 
             if (!path.StartsWith("/")) path = "/" + path;
 
-            var options = new HttpRequestOptions { Url = $"https://api.trakt.tv{path}?limit={limit}", CancellationToken = cancellationToken };
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var options = new HttpRequestOptions { Url = $"https://api.trakt.tv{path}?limit={limit}&_={timestamp}", CancellationToken = cancellationToken };
 
             options.RequestHeaders.Add("trakt-api-version", "2");
             options.RequestHeaders.Add("trakt-api-key", clientId);
