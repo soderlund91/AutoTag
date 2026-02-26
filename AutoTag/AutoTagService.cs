@@ -48,10 +48,12 @@ namespace AutoTag
 
         public object Get(GetStatusRequest request)
         {
+            List<string> logs;
+            lock (AutoTagTask.ExecutionLog) { logs = AutoTagTask.ExecutionLog.ToList(); }
             return new StatusResponse
             {
                 LastRunStatus = AutoTagTask.LastRunStatus,
-                Logs = AutoTagTask.ExecutionLog.ToList(),
+                Logs = logs,
                 IsRunning = AutoTagTask.IsRunning
             };
         }

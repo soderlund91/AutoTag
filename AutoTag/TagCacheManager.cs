@@ -51,14 +51,13 @@ namespace AutoTag
 
             lock (_lock)
             {
-                if (providerIds.TryGetValue("imdb", out var imdb) && _cache.ContainsKey($"imdb_{imdb}"))
-                {
-                    foreach (var tag in _cache[$"imdb_{imdb}"]) tagsToApply.Add(tag);
-                }
-                if (providerIds.TryGetValue("tmdb", out var tmdb) && _cache.ContainsKey($"tmdb_{tmdb}"))
-                {
-                    foreach (var tag in _cache[$"tmdb_{tmdb}"]) tagsToApply.Add(tag);
-                }
+                var imdbKey = providerIds.Keys.FirstOrDefault(k => k.Equals("imdb", StringComparison.OrdinalIgnoreCase));
+                if (imdbKey != null && _cache.TryGetValue($"imdb_{providerIds[imdbKey]}", out var imdbTags))
+                    foreach (var tag in imdbTags) tagsToApply.Add(tag);
+
+                var tmdbKey = providerIds.Keys.FirstOrDefault(k => k.Equals("tmdb", StringComparison.OrdinalIgnoreCase));
+                if (tmdbKey != null && _cache.TryGetValue($"tmdb_{providerIds[tmdbKey]}", out var tmdbTags))
+                    foreach (var tag in tmdbTags) tagsToApply.Add(tag);
             }
             return tagsToApply.ToList();
         }
@@ -85,8 +84,13 @@ namespace AutoTag
                 {
                     if (File.Exists(_cacheFilePath))
                     {
-                        var loaded = _jsonSerializer.DeserializeFromFile<Dictionary<string, HashSet<string>>>(_cacheFilePath);
-                        if (loaded != null) _cache = loaded;
+                        var loaded = _jsonSerializer.DeserializeFromFile<Dictionary<string, List<string>>>(_cacheFilePath);
+                        if (loaded != null)
+                        {
+                            _cache = new Dictionary<string, HashSet<string>>();
+                            foreach (var kvp in loaded)
+                                _cache[kvp.Key] = new HashSet<string>(kvp.Value, StringComparer.OrdinalIgnoreCase);
+                        }
                     }
                 }
                 catch { }

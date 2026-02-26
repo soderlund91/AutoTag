@@ -39,7 +39,7 @@ namespace AutoTag
 
         public string Key => "AutoTagSyncTask";
         public string Name => "AutoTag: Start Sync";
-        public string Description => "Syncs tags and collections from MDBList and Trakt based on configuration.";
+        public string Description => "Syncs tags and collections from MDBList, Trakt, Playlists and Local Media.";
         public string Category => "Library";
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -61,10 +61,9 @@ namespace AutoTag
                 bool debug = config.ExtendedConsoleOutput;
                 bool dryRun = config.DryRunMode;
 
-                LogSummary($"--- STARTING AUTOTAG (v{Plugin.Instance.Version}) ---");
-                if (dryRun) LogSummary("!!! DRY RUN MODE - NO CHANGES WILL BE SAVED !!!");
-
-                LogSummary("Phase 1: Indexing local library...");
+                var startTime = DateTime.Now;
+                LogSummary($"AutoTag v{Plugin.Instance.Version}  ·  {startTime:yyyy-MM-dd HH:mm}");
+                if (dryRun) LogSummary("! DRY RUN MODE — no changes will be saved");
 
                 var allItems = _libraryManager.GetItemList(new InternalItemsQuery
                 {
@@ -85,7 +84,12 @@ namespace AutoTag
                     }
                 }
 
-                LogSummary("Phase 2: Fetching lists...");
+                int movieCount = allItems.Count(i => i.GetType().Name.Contains("Movie"));
+                int seriesCount = allItems.Count(i => i.GetType().Name.Contains("Series"));
+                LogSummary($"Library: {movieCount} movies, {seriesCount} series");
+
+                int activeRuleCount = config.Tags.Count(t => t.Active && !string.IsNullOrWhiteSpace(t.Tag));
+                LogSummary($"Processing {activeRuleCount} active rule(s)...");
 
                 var fetcher = new ListFetcher(_httpClient, _jsonSerializer);
                 var desiredTagsMap = new Dictionary<Guid, HashSet<string>>();
@@ -105,16 +109,22 @@ namespace AutoTag
                 double step = 30.0 / (config.Tags.Count > 0 ? config.Tags.Count : 1);
                 double currentProgress = 0;
 
+                // Cache: seriesInternalId → ett representativt avsnitt.
+                // Byggs lazily vid första träff; delas av alla MediaInfo-regler.
+                var seriesEpisodeCache = new Dictionary<long, BaseItem>();
+
                 foreach (var tagConfig in config.Tags)
                 {
                     if (string.IsNullOrWhiteSpace(tagConfig.Tag) || !tagConfig.Active) continue;
 
                     string tagName = tagConfig.Tag.Trim();
+                    string displayName = !string.IsNullOrWhiteSpace(tagConfig.Name) ? $"{tagConfig.Name} [{tagName}]" : tagName;
+                    string srcLabel = string.IsNullOrEmpty(tagConfig.SourceType) ? "External" : tagConfig.SourceType;
                     managedTags.Add(tagName);
 
                     if (!IsScheduleActive(tagConfig.ActiveIntervals))
                     {
-                        if (debug) LogDebug($"Skipping '{tagName}' (Out of schedule).");
+                        LogSummary($"  ~ {displayName}  ·  skipped (out of schedule)");
                         continue;
                     }
 
@@ -124,55 +134,189 @@ namespace AutoTag
                     try
                     {
                         int effectiveLimit = tagConfig.Limit <= 0 ? 10000 : tagConfig.Limit;
-                        var items = await fetcher.FetchItems(tagConfig.Url, effectiveLimit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
+                        var blacklist = new HashSet<string>(tagConfig.Blacklist ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                        var matchedLocalItems = new List<BaseItem>();
+                        int matchCount = 0;
 
-                        if (items.Count > 0)
+                        if (string.IsNullOrEmpty(tagConfig.SourceType) || tagConfig.SourceType == "External")
                         {
-                            if (items.Count > effectiveLimit) items = items.Take(effectiveLimit).ToList();
-                            int matchCount = 0;
+                            var items = await fetcher.FetchItems(tagConfig.Url, effectiveLimit, config.TraktClientId, config.MdblistApiKey, cancellationToken);
 
-                            var blacklist = new HashSet<string>(tagConfig.Blacklist ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-
-                            foreach (var extItem in items)
+                            if (items.Count > 0)
                             {
-                                if (string.IsNullOrEmpty(extItem.Imdb)) continue;
+                                if (items.Count > effectiveLimit) items = items.Take(effectiveLimit).ToList();
 
-                                if (blacklist.Contains(extItem.Imdb))
+                                foreach (var extItem in items)
                                 {
-                                    if (debug) LogDebug($"Skipping '{extItem.Name}' ({extItem.Imdb}) - Item is blacklisted.");
-                                    continue;
-                                }
+                                    if (string.IsNullOrEmpty(extItem.Imdb)) continue;
 
-                                if (!tagConfig.OnlyCollection)
-                                    TagCacheManager.Instance.AddToCache($"imdb_{extItem.Imdb}", tagName);
-
-                                if (imdbLookup.TryGetValue(extItem.Imdb, out var localItems))
-                                {
-                                    foreach (var localItem in localItems)
+                                    if (blacklist.Contains(extItem.Imdb))
                                     {
-                                        matchCount++;
-                                        if (!tagConfig.OnlyCollection)
-                                        {
-                                            if (!desiredTagsMap.ContainsKey(localItem.Id))
-                                                desiredTagsMap[localItem.Id] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                            desiredTagsMap[localItem.Id].Add(tagName);
-                                        }
+                                        if (debug) LogDebug($"[BL] {extItem.Name} ({extItem.Imdb}) — blacklisted, skipping");
+                                        continue;
+                                    }
 
-                                        if (tagConfig.EnableCollection)
+                                    if (!tagConfig.OnlyCollection)
+                                        TagCacheManager.Instance.AddToCache($"imdb_{extItem.Imdb}", tagName);
+
+                                    if (imdbLookup.TryGetValue(extItem.Imdb, out var localItems))
+                                    {
+                                        foreach (var localItem in localItems)
                                         {
-                                            if (!desiredCollectionsMap.ContainsKey(cName))
-                                                desiredCollectionsMap[cName] = new HashSet<long>();
-                                            desiredCollectionsMap[cName].Add(localItem.InternalId);
+                                            if (!matchedLocalItems.Contains(localItem)) matchedLocalItems.Add(localItem);
                                         }
                                     }
                                 }
                             }
-                            LogSummary($"   -> [OK] '{tagName}': Matched {matchCount} items.");
+                            if (debug) LogDebug($"{displayName}: {items.Count} fetched from API, {matchedLocalItems.Count} in library");
+                        }
+                        else if (tagConfig.SourceType == "LocalCollection" || tagConfig.SourceType == "LocalPlaylist")
+                        {
+                            if (!string.IsNullOrEmpty(tagConfig.LocalSourceId))
+                            {
+                                string[] folderTypes = tagConfig.SourceType == "LocalPlaylist"
+                                    ? new[] { "Playlist" }
+                                    : new[] { "BoxSet" };
+                                var allFolders = _libraryManager.GetItemList(new InternalItemsQuery
+                                {
+                                    IncludeItemTypes = folderTypes,
+                                    Recursive = true
+                                });
+                                var localSourceFolder = allFolders.FirstOrDefault(i =>
+                                    string.Equals(i.Name, tagConfig.LocalSourceId, StringComparison.OrdinalIgnoreCase)
+                                );
+
+                                if (localSourceFolder != null)
+                                {
+                                    var children = new List<BaseItem>();
+                                    if (debug) LogDebug($"{displayName}: found '{localSourceFolder.Name}' ({localSourceFolder.GetType().Name})");
+
+                                    if (tagConfig.SourceType == "LocalCollection")
+                                    {
+                                        children = _libraryManager.GetItemList(new InternalItemsQuery
+                                        {
+                                            CollectionIds = new[] { localSourceFolder.InternalId },
+                                            IsVirtualItem = false
+                                        }).ToList();
+                                    }
+                                    else
+                                    {
+                                        // Använd ListIds — Embys korrekta API för att hämta playlist-innehåll
+                                        children = _libraryManager.GetItemList(new InternalItemsQuery
+                                        {
+                                            ListIds = new[] { localSourceFolder.InternalId }
+                                        }).ToList();
+                                    }
+
+                                    if (children.Count == 0)
+                                    {
+                                        LogSummary($"  ! {displayName}  ·  '{tagConfig.LocalSourceId}' is empty or virtual", "Warn");
+                                    }
+                                    else if (debug)
+                                    {
+                                        LogDebug($"{displayName}: {children.Count} items in '{tagConfig.LocalSourceId}'");
+                                    }
+
+                                    foreach (var child in children)
+                                    {
+                                        if (child == null) continue;
+
+                                        BaseItem itemToTag = child;
+
+                                        // Packa upp om det är ett PlaylistItem-objekt
+                                        if (child.GetType().Name.Contains("PlaylistItem"))
+                                        {
+                                            try { 
+                                                var inner = ((dynamic)child).Item; 
+                                                if (inner != null) itemToTag = inner;
+                                            } catch { }
+                                        }
+
+                                        // Om det är ett avsnitt, applicera taggen på Serien istället
+                                        if (itemToTag.GetType().Name.Contains("Episode"))
+                                        {
+                                            try { 
+                                                var series = ((dynamic)itemToTag).Series; 
+                                                if (series != null) itemToTag = series;
+                                            } catch { }
+                                        }
+
+                                        // Släpp bara igenom Filmer och Serier
+                                        if (!itemToTag.GetType().Name.Contains("Movie") && !itemToTag.GetType().Name.Contains("Series"))
+                                            continue;
+
+                                        var imdb = itemToTag.GetProviderId("Imdb");
+                                        if (!string.IsNullOrEmpty(imdb) && blacklist.Contains(imdb)) continue;
+
+                                        if (!matchedLocalItems.Contains(itemToTag))
+                                        {
+                                            matchedLocalItems.Add(itemToTag);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    LogSummary($"  ! {displayName}  ·  {tagConfig.SourceType} '{tagConfig.LocalSourceId}' not found", "Warn");
+                                }
+
+                                if (effectiveLimit < 10000 && matchedLocalItems.Count > effectiveLimit)
+                                    matchedLocalItems = matchedLocalItems.Take(effectiveLimit).ToList();
+                            }
+                        }
+                        else if (tagConfig.SourceType == "MediaInfo")
+                        {
+                            foreach (var item in allItems)
+                            {
+                                if (item.LocationType != LocationType.FileSystem) continue;
+
+                                var imdb = item.GetProviderId("Imdb");
+                                if (!string.IsNullOrEmpty(imdb) && blacklist.Contains(imdb)) continue;
+
+                                if (ItemMatchesMediaInfo(item, tagConfig.MediaInfoConditions, debug, seriesEpisodeCache))
+                                {
+                                    matchedLocalItems.Add(item);
+                                }
+                            }
+
+                            if (effectiveLimit < 10000 && matchedLocalItems.Count > effectiveLimit)
+                                matchedLocalItems = matchedLocalItems.Take(effectiveLimit).ToList();
+                        }
+
+                        if (matchedLocalItems.Count > 0)
+                        {
+                            foreach (var localItem in matchedLocalItems)
+                            {
+                                matchCount++;
+                                if (!tagConfig.OnlyCollection)
+                                {
+                                    if (!desiredTagsMap.ContainsKey(localItem.Id))
+                                        desiredTagsMap[localItem.Id] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    desiredTagsMap[localItem.Id].Add(tagName);
+
+                                    var imdb = localItem.GetProviderId("Imdb");
+                                    if (!string.IsNullOrEmpty(imdb) && tagConfig.SourceType != "External")
+                                    {
+                                        TagCacheManager.Instance.AddToCache($"imdb_{imdb}", tagName);
+                                    }
+                                }
+
+                                if (tagConfig.EnableCollection)
+                                {
+                                    if (!desiredCollectionsMap.ContainsKey(cName))
+                                        desiredCollectionsMap[cName] = new HashSet<long>();
+                                    desiredCollectionsMap[cName].Add(localItem.InternalId);
+                                }
+                            }
+                            LogSummary($"  + {displayName}  ·  {matchCount} matched  [{srcLabel}]");
+                        }
+                        else
+                        {
+                            LogSummary($"  - {displayName}  ·  0 matched  [{srcLabel}]");
                         }
                     }
                     catch (Exception ex)
                     {
-                        LogSummary($"Error fetching '{tagName}': {ex.Message}", "Error");
+                        LogSummary($"  ! {displayName}  ·  Error: {ex.Message}", "Error");
                         failedFetches.Add(tagName);
                         if (tagConfig.EnableCollection) failedFetches.Add(cName);
                     }
@@ -187,8 +331,7 @@ namespace AutoTag
                     SaveFileHistory("autotag_history.txt", managedTags.ToList());
                 }
 
-                LogSummary("Phase 3: Syncing Tags...");
-                int tagsAdded = 0, tagsRemoved = 0;
+                int tagsAdded = 0, tagsRemoved = 0, itemsChanged = 0;
                 foreach (var item in allItems)
                 {
                     var existingTags = new HashSet<string>(item.Tags, StringComparer.OrdinalIgnoreCase);
@@ -199,6 +342,7 @@ namespace AutoTag
 
                     if (toRemove.Count == 0 && toAdd.Count == 0) continue;
 
+                    itemsChanged++;
                     if (!dryRun)
                     {
                         foreach (var t in toRemove) { item.RemoveTag(t); tagsRemoved++; }
@@ -210,9 +354,12 @@ namespace AutoTag
                         tagsAdded += toAdd.Count; tagsRemoved += toRemove.Count;
                     }
                 }
-                LogSummary($"Tags: +{tagsAdded}, -{tagsRemoved}");
+                if (tagsAdded > 0 || tagsRemoved > 0)
+                    LogSummary($"Tags: +{tagsAdded} added, -{tagsRemoved} removed  ({itemsChanged} items)");
+                else
+                    LogSummary("Tags: no changes");
 
-                LogSummary("Phase 4: Syncing Collections...");
+                int collCreated = 0, collUpdated = 0;
                 foreach (var kvp in desiredCollectionsMap)
                 {
                     string cName = kvp.Key;
@@ -225,27 +372,38 @@ namespace AutoTag
                     {
                         if (dryRun) continue;
                         var createdRef = await _collectionManager.CreateCollection(new CollectionCreationOptions { Name = cName, IsLocked = false, ItemIdList = desiredIds.ToArray() });
-                        if (createdRef != null) LogSummary($"   -> Created Collection '{cName}'.");
+                        if (createdRef != null)
+                        {
+                            collCreated++;
+                            if (debug) LogDebug($"Created collection '{cName}'  ({desiredIds.Count} items)");
+                        }
                     }
                     else
                     {
                         var currentMembers = _libraryManager.GetItemList(new InternalItemsQuery { CollectionIds = new[] { existingColl.InternalId }, Recursive = true, IsVirtualItem = false }).Select(i => i.InternalId).ToHashSet();
                         var toAdd = desiredIds.Where(id => !currentMembers.Contains(id)).ToList();
+                        var toRemove = currentMembers.Where(id => !desiredIds.Contains(id)).ToList();
                         if (toAdd.Count > 0 && !dryRun)
-                        {
                             await _collectionManager.AddToCollection(existingColl.InternalId, toAdd.ToArray());
-                            LogSummary($"   -> '{cName}': Added {toAdd.Count} items.");
+                        if (toRemove.Count > 0 && !dryRun)
+                            _collectionManager.RemoveFromCollection((BoxSet)existingColl, toRemove.ToArray());
+                        if ((toAdd.Count > 0 || toRemove.Count > 0) && !dryRun)
+                        {
+                            collUpdated++;
+                            if (debug) LogDebug($"Collection '{cName}': +{toAdd.Count} added, -{toRemove.Count} removed");
                         }
                     }
                 }
+                if (collCreated > 0 || collUpdated > 0)
+                    LogSummary($"Collections: {collCreated} created, {collUpdated} updated");
 
-                LogSummary("Phase 5: Cleanup...");
+                int collDeleted = 0;
                 var toDelete = previouslyManagedCollections.Where(h => !activeCollections.Contains(h)).ToList();
                 foreach (var oldName in toDelete)
                 {
                     if (failedFetches.Contains(oldName))
                     {
-                        LogSummary($"   -> Skipping cleanup of '{oldName}' due to fetch error (Safety).", "Warn");
+                        LogSummary($"  ! Skipping cleanup of '{oldName}' — fetch failed (safety check)", "Warn");
                         activeCollections.Add(oldName);
                         continue;
                     }
@@ -253,16 +411,24 @@ namespace AutoTag
                     var coll = _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { "BoxSet" }, Name = oldName, Recursive = true }).FirstOrDefault();
                     if (coll != null && !dryRun)
                     {
-                        _libraryManager.DeleteItem(coll, new DeleteOptions { DeleteFileLocation = true });
-                        LogSummary($"   -> Deleted '{oldName}' (Not active/scheduled).");
+                        _libraryManager.DeleteItem(coll, new DeleteOptions { DeleteFileLocation = false });
+                        collDeleted++;
+                        if (debug) LogDebug($"Deleted collection '{oldName}'  (not active/scheduled)");
                     }
                 }
+                if (collDeleted > 0)
+                    LogSummary($"Cleanup: {collDeleted} collection(s) removed");
 
                 if (!dryRun) SaveFileHistory("autotag_collections.txt", activeCollections.ToList());
 
                 progress.Report(100);
-                LastRunStatus = (dryRun ? "Dry Run Complete" : "Success") + $" ({DateTime.Now:HH:mm})";
-                LogSummary("--- AUTOTAG FINISHED ---");
+                var elapsed = DateTime.Now - startTime;
+                string elapsedStr = elapsed.TotalMinutes >= 1
+                    ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s"
+                    : $"{(int)elapsed.TotalSeconds}s";
+                string finalStatus = dryRun ? "Dry Run" : "Success";
+                LastRunStatus = $"{finalStatus} ({DateTime.Now:HH:mm})";
+                LogSummary($"Done in {elapsedStr}  ·  {finalStatus}");
             }
             catch (Exception ex)
             {
@@ -285,6 +451,140 @@ namespace AutoTag
                 if (match) return true;
             }
             return false;
+        }
+
+        private bool ItemMatchesMediaInfo(BaseItem item, List<string> conditions, bool debug, Dictionary<long, BaseItem>? seriesEpisodeCache = null)
+        {
+            if (conditions == null || conditions.Count == 0) return true;
+
+            bool is4k = false, is1080 = false, is720 = false, isHevc = false, isAv1 = false;
+            bool isHdr = false, isDv = false, isAtmos = false, isTrueHd = false, isDts = false;
+            bool is51 = false, is71 = false;
+
+            BaseItem itemToCheck = item;
+
+            if (item.GetType().Name.Contains("Series"))
+            {
+                if (seriesEpisodeCache != null)
+                {
+                    if (!seriesEpisodeCache.TryGetValue(item.InternalId, out var cached))
+                    {
+                        cached = _libraryManager.GetItemList(new InternalItemsQuery
+                        {
+                            IncludeItemTypes = new[] { "Episode" },
+                            Parent = item,
+                            Recursive = true,
+                            Limit = 1
+                        }).FirstOrDefault() ?? item;
+                        seriesEpisodeCache[item.InternalId] = cached;
+                    }
+                    itemToCheck = cached;
+                }
+                else
+                {
+                    itemToCheck = _libraryManager.GetItemList(new InternalItemsQuery
+                    {
+                        IncludeItemTypes = new[] { "Episode" },
+                        Parent = item,
+                        Recursive = true,
+                        Limit = 1
+                    }).FirstOrDefault() ?? item;
+                }
+            }
+
+            try
+            {
+                dynamic dynItem = itemToCheck;
+
+                try {
+                    int defaultWidth = (int)dynItem.Width;
+                    if (defaultWidth >= 3800) is4k = true;
+                    else if (defaultWidth >= 1900) is1080 = true;
+                    else if (defaultWidth >= 1200) is720 = true;
+                } catch { }
+
+                System.Collections.IEnumerable streams = null;
+                try { streams = dynItem.GetMediaStreams(); } catch { }
+                
+                if (streams == null) {
+                    try {
+                        var sources = dynItem.GetMediaSources(false);
+                        if (sources != null) {
+                            foreach (var src in sources) {
+                                if (src.MediaStreams != null) { streams = src.MediaStreams; break; }
+                            }
+                        }
+                    } catch { }
+                }
+
+                if (streams == null) {
+                    try { streams = dynItem.MediaStreams; } catch { }
+                }
+
+                if (streams != null)
+                {
+                    foreach (dynamic stream in streams)
+                    {
+                        try
+                        {
+                            string type = stream.Type?.ToString() ?? "";
+                            string codec = stream.Codec?.ToString() ?? "";
+                            string profile = stream.Profile?.ToString() ?? "";
+                            string videoRange = "";
+                            try { videoRange = stream.VideoRange?.ToString() ?? ""; } catch { }
+
+                            if (type.Equals("Video", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try {
+                                    int w = (int)stream.Width;
+                                    if (w >= 3800) is4k = true;
+                                    else if (w >= 1900) is1080 = true;
+                                    else if (w >= 1200) is720 = true;
+                                } catch { }
+
+                                if (codec.IndexOf("hevc", StringComparison.OrdinalIgnoreCase) >= 0 || codec.IndexOf("h265", StringComparison.OrdinalIgnoreCase) >= 0) isHevc = true;
+                                if (codec.IndexOf("av1", StringComparison.OrdinalIgnoreCase) >= 0) isAv1 = true;
+
+                                if (profile.IndexOf("dv", StringComparison.OrdinalIgnoreCase) >= 0 || profile.IndexOf("dolby vision", StringComparison.OrdinalIgnoreCase) >= 0) isDv = true;
+                                if (videoRange.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
+                                if (profile.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
+                            }
+                            else if (type.Equals("Audio", StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (profile.IndexOf("atmos", StringComparison.OrdinalIgnoreCase) >= 0) isAtmos = true;
+                                if (codec.IndexOf("truehd", StringComparison.OrdinalIgnoreCase) >= 0) isTrueHd = true;
+                                if (codec.IndexOf("dts", StringComparison.OrdinalIgnoreCase) >= 0) isDts = true;
+
+                                try {
+                                    int ch = (int)stream.Channels;
+                                    if (ch == 6) is51 = true;
+                                    if (ch >= 8) is71 = true;
+                                } catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            foreach (var cond in conditions)
+            {
+                if (cond == "4K" && !is4k) return false;
+                if (cond == "1080p" && !is1080) return false;
+                if (cond == "720p" && !is720) return false;
+                if (cond == "HEVC" && !isHevc) return false;
+                if (cond == "AV1" && !isAv1) return false;
+                if (cond == "HDR" && !isHdr && !isDv) return false;
+                if (cond == "DolbyVision" && !isDv) return false;
+                if (cond == "Atmos" && !isAtmos) return false;
+                if (cond == "TrueHD" && !isTrueHd) return false;
+                if (cond == "DTS" && !isDts) return false;
+                if (cond == "5.1" && !is51) return false;
+                if (cond == "7.1" && !is71) return false;
+            }
+
+            return true;
         }
 
         private void LogSummary(string message, string level = "Info")

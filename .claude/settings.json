@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -lh /c/Users/Håkan/AppData/Roaming/Emby-Server/system/*.xml)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File /tmp/inspect_emby.ps1)",
+      "Bash(head -30 grep -n \"PlaylistItemId\\\\|PlaylistId\\\\|entryId\\\\|EntryId\\\\|LinkedChildId\\\\|PlaylistEntry\" \"C:/Users/Håkan/AppData/Roaming/Emby-Server/system/MediaBrowser.Model.xml\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}

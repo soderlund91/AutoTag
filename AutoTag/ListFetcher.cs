@@ -122,7 +122,7 @@ namespace AutoTag
                                 if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(imdb))
                                     list.Add(new ExternalItemDto { Name = title, Imdb = imdb, Tmdb = null });
                             }
-                            return list;
+                            if (list.Count > 0) return list;
                         }
                     }
                     catch { }

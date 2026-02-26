@@ -24,6 +24,7 @@ namespace AutoTag
 
         public void Run()
         {
+            if (Plugin.Instance == null) return;
             TagCacheManager.Instance.Initialize(Plugin.Instance.DataFolderPath, _jsonSerializer);
 
             _libraryManager.ItemAdded += OnItemChanged;

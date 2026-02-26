@@ -5,6 +5,9 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     var statusInterval = null;
     var originalConfigState = null;
 
+    var cachedCollections = [];
+    var cachedPlaylists = [];
+
     var customCss = `
     <style id="autoTagCustomCss">
         .day-toggle {
@@ -273,6 +276,24 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             </div>`;
     }
 
+    function getLocalRowHtml(type, selectedName, limit) {
+        var options = type === 'LocalCollection' ? cachedCollections : cachedPlaylists;
+        var optHtml = '<option value="">-- Select --</option>' + options.map(o => `<option value="${o.Name}" ${selectedName === o.Name ? 'selected' : ''}>${o.Name}</option>`).join('');
+        var lim = limit !== undefined ? limit : 0;
+        return `
+            <div class="local-row" style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <div style="flex-grow:1;">
+                    <select is="emby-select" class="selLocalSource" style="width:100%;">
+                        ${optHtml}
+                    </select>
+                </div>
+                <div style="width:110px;">
+                    <input is="emby-input" class="txtLocalLimit" type="number" label="Max (0=All)" value="${lim}" min="0" />
+                </div>
+                <button type="button" is="emby-button" class="raised btnRemoveLocal" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none; margin-top:12px;" title="Remove"><i class="md-icon">remove_circle_outline</i></button>
+            </div>`;
+    }
+
     function getMonthOptions(selectedMonth) {
         var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         return months.map((m, i) => `<option value="${i + 1}" ${selectedMonth == (i + 1) ? 'selected' : ''}>${m}</option>`).join('');
@@ -384,6 +405,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     function renderTagGroup(tagConfig, container, prepend, index, isNew) {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
+        var labelName = tagConfig.Name || '';
         var urls = tagConfig.Urls || (tagConfig.Url ? [{ url: tagConfig.Url, limit: tagConfig.Limit !== undefined ? tagConfig.Limit : 0 }] : [{ url: '', limit: 0 }]);
         var blacklist = (tagConfig.Blacklist || []).join(', ');
         var intervals = tagConfig.ActiveIntervals || [];
@@ -395,6 +417,26 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var onlyColl = tagConfig.OnlyCollection ? 'checked' : '';
         var collName = tagConfig.CollectionName || '';
 
+        var sourceType = tagConfig.SourceType || "External";
+        var localSources = tagConfig.LocalSources || [];
+        if (localSources.length === 0) localSources = [{ id: "", limit: 0 }];
+
+        var mediaInfoLimit = tagConfig.Limit || 0;
+
+        var mediaInfo = tagConfig.MediaInfoConditions || [];
+        var is4k = mediaInfo.includes("4K") ? "checked" : "";
+        var is1080p = mediaInfo.includes("1080p") ? "checked" : "";
+        var is720p = mediaInfo.includes("720p") ? "checked" : "";
+        var isHEVC = mediaInfo.includes("HEVC") ? "checked" : "";
+        var isAV1 = mediaInfo.includes("AV1") ? "checked" : "";
+        var isHDR = mediaInfo.includes("HDR") ? "checked" : "";
+        var isDolbyVision = mediaInfo.includes("DolbyVision") ? "checked" : "";
+        var isAtmos = mediaInfo.includes("Atmos") ? "checked" : "";
+        var isTrueHD = mediaInfo.includes("TrueHD") ? "checked" : "";
+        var isDTS = mediaInfo.includes("DTS") ? "checked" : "";
+        var is51 = mediaInfo.includes("5.1") ? "checked" : "";
+        var is71 = mediaInfo.includes("7.1") ? "checked" : "";
+
         var activeText = tagConfig.Active !== false ? "Active" : "Disabled";
         var activeColor = tagConfig.Active !== false ? "#52B54B" : "var(--theme-text-secondary)";
 
@@ -404,6 +446,17 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         }
         if (tagConfig.EnableCollection) {
             indicatorsHtml += `<span class="tag-indicator collection"><i class="md-icon" style="font-size:1.1em;">library_books</i> Collection</span>`;
+        }
+
+        var sourceCount = 0;
+        var sourceLabel = "SOURCE(S)";
+        if (sourceType === 'External') {
+            sourceCount = urls.length;
+        } else if (sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') {
+            sourceCount = localSources.length;
+        } else if (sourceType === 'MediaInfo') {
+            sourceCount = mediaInfo.length;
+            sourceLabel = "FILTER(S)";
         }
 
         var initialStyle = isNew ? 'display:block;' : 'display:none;';
@@ -427,8 +480,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         </label>
                     </div>
                     <div class="tag-info" style="display:flex; align-items:center;">
-                        <span class="tag-title" style="font-weight:bold; font-size:1.1em;">${tagName || 'New Tag'}</span>
-                        <span class="tag-status" style="margin-left:10px; font-size:0.8em; opacity:0.7;">${urls.length} SOURCE(S)</span>
+                        <span class="tag-title" style="font-weight:bold; font-size:1.1em;">${labelName || tagName || 'New Tag'}</span>
+                        <span class="tag-status" style="margin-left:10px; font-size:0.8em; opacity:0.7;">${sourceCount} ${sourceLabel}</span>
                         <span class="badge-container" style="display:flex; align-items:center;">${indicatorsHtml}</span>
                     </div>
                 </div>
@@ -443,10 +496,51 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 </div>
                 
                 <div class="tab-content general-tab">
+                    <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtEntryLabel" type="text" label="Entry Label (Display Name)" value="${labelName}" /></div>
                     <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
-                    <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
-                    <div class="url-list-container">${urls.map(u => getUrlRowHtml(u.url, u.limit)).join('')}</div>
-                    <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label class="selectLabel">Source Type</label>
+                        <select is="emby-select" class="selSourceType" style="width:100%;">
+                            <option value="External" ${sourceType === 'External' ? 'selected' : ''}>External List (Trakt/MDBList)</option>
+                            <option value="LocalCollection" ${sourceType === 'LocalCollection' ? 'selected' : ''}>Local Collection</option>
+                            <option value="LocalPlaylist" ${sourceType === 'LocalPlaylist' ? 'selected' : ''}>Local Playlist</option>
+                            <option value="MediaInfo" ${sourceType === 'MediaInfo' ? 'selected' : ''}>Media Information</option>
+                        </select>
+                    </div>
+
+                    <div class="source-external-container" style="display: ${sourceType === 'External' ? 'block' : 'none'};">
+                        <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
+                        <div class="url-list-container">${urls.map(u => getUrlRowHtml(u.url, u.limit)).join('')}</div>
+                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
+                    </div>
+
+                    <div class="source-local-container" style="display: ${(sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') ? 'block' : 'none'};">
+                        <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;" class="local-type-label">${sourceType === 'LocalPlaylist' ? 'Select Playlists' : 'Select Collections'}</p>
+                        <div class="local-list-container">${localSources.map(ls => getLocalRowHtml(sourceType, ls.id, ls.limit)).join('')}</div>
+                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddLocal" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another</button></div>
+                    </div>
+
+                    <div class="source-mediainfo-container" style="display: ${sourceType === 'MediaInfo' ? 'block' : 'none'};">
+                        <p style="margin:10px 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Select Media Requirements (Multiple allowed)</p>
+                        <div class="media-info-grid">
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${is4k} /><span>4K Resolution</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${is1080p} /><span>Full HD (1080p)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${is720p} /><span>HD (720p)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${isHEVC} /><span>HEVC (H.265)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${isAV1} /><span>AV1 Codec</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${isHDR} /><span>HDR</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${isDolbyVision} /><span>Dolby Vision</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${isAtmos} /><span>Dolby Atmos</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${isTrueHD} /><span>Dolby TrueHD</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${isDTS} /><span>DTS Audio</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${is51} /><span>5.1 Channels</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${is71} /><span>7.1 Channels</span></label>
+                        </div>
+                        <div style="width:110px; margin-top:15px;">
+                            <input is="emby-input" class="txtMediaInfoLimit" type="number" label="Max (0=All)" value="${mediaInfoLimit}" min="0" />
+                        </div>
+                    </div>
                 </div>
 
                 <div class="tab-content schedule-tab" style="display:none;">
@@ -543,6 +637,23 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         });
 
         row.addEventListener('change', e => {
+            if (e.target.classList.contains('selSourceType')) {
+                var type = e.target.value;
+                row.querySelector('.source-external-container').style.display = type === 'External' ? 'block' : 'none';
+                row.querySelector('.source-local-container').style.display = (type === 'LocalCollection' || type === 'LocalPlaylist') ? 'block' : 'none';
+                row.querySelector('.source-mediainfo-container').style.display = type === 'MediaInfo' ? 'block' : 'none';
+
+                if (type === 'LocalCollection' || type === 'LocalPlaylist') {
+                    row.querySelector('.local-list-container').innerHTML = getLocalRowHtml(type, "", 0);
+                    row.querySelector('.local-type-label').textContent = type === 'LocalPlaylist' ? "Select Playlists" : "Select Collections";
+                }
+                updateCount(row);
+            }
+            
+            if (e.target.classList.contains('chkMediaInfo')) {
+                updateCount(row);
+            }
+            
             if (e.target.classList.contains('selDateType')) {
                 var dateRow = e.target.closest('.date-row');
                 var type = e.target.value;
@@ -591,6 +702,13 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             markDirty();
         });
 
+        row.querySelector('.btnAddLocal').addEventListener('click', () => {
+            var st = row.querySelector('.selSourceType').value;
+            row.querySelector('.local-list-container').insertAdjacentHTML('beforeend', getLocalRowHtml(st, "", 0));
+            updateCount(row);
+            markDirty();
+        });
+
         row.querySelector('.btnAddDate').addEventListener('click', () => {
             row.querySelector('.date-list-container').insertAdjacentHTML('beforeend', getDateRowHtml({ Type: 'SpecificDate' }));
             updateBadges(row);
@@ -600,6 +718,12 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         row.addEventListener('click', e => {
             if (e.target.closest('.btnRemoveUrl')) {
                 e.target.closest('.url-row').remove();
+                updateCount(row);
+                markDirty();
+            }
+
+            if (e.target.closest('.btnRemoveLocal')) {
+                e.target.closest('.local-row').remove();
                 updateCount(row);
                 markDirty();
             }
@@ -621,18 +745,22 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             if (btnTest) {
                 var uRow = btnTest.closest('.url-row');
                 var url = uRow.querySelector('.txtTagUrl').value;
-                var limitStr = uRow.querySelector('.txtUrlLimit').value;
-                var limit = parseInt(limitStr, 10);
-                if (isNaN(limit)) limit = 0;
                 if (!url) return;
 
-                var effLimit = limit <= 0 ? 10000 : limit;
                 btnTest.disabled = true;
-                window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: effLimit })).then(r => window.Dashboard.alert(r.Message)).finally(() => btnTest.disabled = false);
+                window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/TestUrl", { Url: url, Limit: 1000 })).then(result => {
+                    window.Dashboard.alert(result.Message);
+                }).finally(() => btnTest.disabled = false);
             }
         });
 
-        row.querySelector('.txtTagName').addEventListener('input', function () { row.querySelector('.tag-title').textContent = this.value || 'New Tag'; });
+        function updateTagTitle() {
+            var lbl = row.querySelector('.txtEntryLabel').value;
+            var tag = row.querySelector('.txtTagName').value;
+            row.querySelector('.tag-title').textContent = lbl || tag || 'New Tag';
+        }
+        row.querySelector('.txtEntryLabel').addEventListener('input', updateTagTitle);
+        row.querySelector('.txtTagName').addEventListener('input', updateTagTitle);
 
         var handle = row.querySelector('.drag-handle');
 
@@ -677,7 +805,22 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         });
     }
 
-    function updateCount(row) { row.querySelector('.tag-status').textContent = row.querySelectorAll('.txtTagUrl').length + " SOURCE(S)"; }
+    function updateCount(row) {
+        var sourceType = row.querySelector('.selSourceType').value;
+        var count = 0;
+        var label = "SOURCE(S)";
+        
+        if (sourceType === 'External') {
+            count = row.querySelectorAll('.url-row').length;
+        } else if (sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') {
+            count = row.querySelectorAll('.local-row').length;
+        } else if (sourceType === 'MediaInfo') {
+            count = row.querySelectorAll('.chkMediaInfo:checked').length;
+            label = "FILTER(S)";
+        }
+        
+        row.querySelector('.tag-status').textContent = count + " " + label;
+    }
 
     function refreshStatus(view) {
         window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/Status")).then(result => {
@@ -710,8 +853,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         rows.sort((a, b) => {
             if (criteria === 'Name') {
-                var na = a.querySelector('.txtTagName').value.toLowerCase();
-                var nb = b.querySelector('.txtTagName').value.toLowerCase();
+                var na = (a.querySelector('.txtEntryLabel').value || a.querySelector('.txtTagName').value).toLowerCase();
+                var nb = (b.querySelector('.txtEntryLabel').value || b.querySelector('.txtTagName').value).toLowerCase();
                 return na.localeCompare(nb);
             }
             if (criteria === 'Active') {
@@ -737,6 +880,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var flatTags = [];
         view.querySelectorAll('.tag-row').forEach(row => {
             var name = row.querySelector('.txtTagName').value;
+            var entryLabel = row.querySelector('.txtEntryLabel').value;
             var active = row.querySelector('.chkTagActive').checked;
 
             var blInput = row.querySelector('.txtTagBlacklist');
@@ -774,26 +918,48 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 currentLastMod = new Date().toISOString();
             }
 
-            row.querySelectorAll('.url-row').forEach(uRow => {
-                var urlVal = uRow.querySelector('.txtTagUrl').value.trim();
+            var st = row.querySelector('.selSourceType').value;
+            var mi = [];
+            row.querySelectorAll('.chkMediaInfo:checked').forEach(cb => mi.push(cb.value));
 
-                var limitStr = uRow.querySelector('.txtUrlLimit').value;
-                var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
-                if (isNaN(limitVal)) limitVal = 0;
+            if (st === 'External') {
+                row.querySelectorAll('.url-row').forEach(uRow => {
+                    var urlVal = uRow.querySelector('.txtTagUrl').value.trim();
 
-                if (urlVal) flatTags.push({
-                    Tag: name,
-                    Url: urlVal,
-                    Active: active,
-                    Limit: limitVal,
-                    Blacklist: bl,
-                    ActiveIntervals: intervals,
-                    EnableCollection: enableColl,
-                    CollectionName: collName,
-                    OnlyCollection: onlyColl,
-                    LastModified: currentLastMod
+                    var limitStr = uRow.querySelector('.txtUrlLimit').value;
+                    var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
+                    if (isNaN(limitVal)) limitVal = 0;
+
+                    if (urlVal) flatTags.push({
+                        Name: entryLabel, Tag: name, Url: urlVal, Active: active, Limit: limitVal, Blacklist: bl, ActiveIntervals: intervals,
+                        EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                        SourceType: st, LocalSourceId: "", MediaInfoConditions: mi
+                    });
                 });
-            });
+            } else if (st === 'LocalCollection' || st === 'LocalPlaylist') {
+                row.querySelectorAll('.local-row').forEach(lRow => {
+                    var localVal = lRow.querySelector('.selLocalSource').value;
+                    var limitStr = lRow.querySelector('.txtLocalLimit').value;
+                    var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
+                    if (isNaN(limitVal)) limitVal = 0;
+
+                    if (localVal) flatTags.push({
+                        Name: entryLabel, Tag: name, Url: "", Active: active, Limit: limitVal, Blacklist: bl, ActiveIntervals: intervals,
+                        EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                        SourceType: st, LocalSourceId: localVal, MediaInfoConditions: mi
+                    });
+                });
+            } else {
+                var miLimitStr = row.querySelector('.txtMediaInfoLimit') ? row.querySelector('.txtMediaInfoLimit').value : "0";
+                var miLimitVal = parseInt(miLimitStr, 10);
+                if (isNaN(miLimitVal)) miLimitVal = 0;
+
+                flatTags.push({
+                    Name: entryLabel, Tag: name, Url: "", Active: active, Limit: miLimitVal, Blacklist: bl, ActiveIntervals: intervals,
+                    EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                    SourceType: st, LocalSourceId: "", MediaInfoConditions: mi
+                });
+            }
         });
 
         return {
@@ -847,10 +1013,11 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         rows.forEach(row => {
             var tagName = (row.querySelector('.txtTagName').value || "").toLowerCase();
+            var entryLbl = (row.querySelector('.txtEntryLabel').value || "").toLowerCase();
             var hasSchedule = row.querySelectorAll('.date-row').length > 0;
             var hasCollection = row.querySelector('.chkEnableCollection').checked;
 
-            var matchesSearch = tagName.includes(searchTerm);
+            var matchesSearch = tagName.includes(searchTerm) || entryLbl.includes(searchTerm);
             var matchesFilter = true;
             if (showScheduleOnly && showCollectionOnly) {
                 matchesFilter = (hasSchedule || hasCollection);
@@ -1016,38 +1183,50 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 checkGlobalDirtyState();
             });
 
-            window.ApiClient.getPluginConfiguration(pluginId).then(config => {
-                var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
-                view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
-                view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
-                view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
-                view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
-                if (view.querySelector('#txtSearchTags')) {
-                    view.querySelector('#txtSearchTags').value = '';
-                    view.querySelector('#btnClearSearch').style.display = 'none';
-                }
-                if (view.querySelector('#chkFilterSchedule')) view.querySelector('#chkFilterSchedule').checked = false;
-                if (view.querySelector('#chkFilterCollection')) view.querySelector('#chkFilterCollection').checked = false;
+            Promise.all([
+                window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "BoxSet", Recursive: true })),
+                window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "Playlist", Recursive: true }))
+            ]).then(responses => {
+                cachedCollections = responses[0].Items || [];
+                cachedPlaylists = responses[1].Items || [];
 
-                var grouped = {};
-                (config.Tags || []).forEach(t => {
-                    if (!grouped[t.Tag]) grouped[t.Tag] = {
-                        Tag: t.Tag, Urls: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
-                        EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified
-                    };
-                    if (t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
+                window.ApiClient.getPluginConfiguration(pluginId).then(config => {
+                    var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
+                    view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
+                    view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
+                    view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
+                    view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
+                    if (view.querySelector('#txtSearchTags')) {
+                        view.querySelector('#txtSearchTags').value = '';
+                        view.querySelector('#btnClearSearch').style.display = 'none';
+                    }
+                    if (view.querySelector('#chkFilterSchedule')) view.querySelector('#chkFilterSchedule').checked = false;
+                    if (view.querySelector('#chkFilterCollection')) view.querySelector('#chkFilterCollection').checked = false;
+
+                    var grouped = {};
+                    (config.Tags || []).forEach(t => {
+                        if (!grouped[t.Tag]) grouped[t.Tag] = {
+                            Tag: t.Tag, Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                            EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
+                            SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
+                            Limit: t.Limit || 0
+                        };
+                        if (t.SourceType === 'External' && t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
+                        if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[t.Tag].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
+                        if (t.SourceType === 'MediaInfo') grouped[t.Tag].Limit = t.Limit;
+                    });
+
+                    var keys = Object.keys(grouped);
+                    keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
+                    if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, container, false, 0);
+
+                    var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
+                    sortRows(container, savedSort);
+                    applyFilters(view);
+                    originalConfigState = JSON.stringify(getUiConfig(view, true));
+                    checkGlobalDirtyState();
+                    updateDryRunWarning();
                 });
-
-                var keys = Object.keys(grouped);
-                keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
-                if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, container, false, 0);
-
-                var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
-                sortRows(container, savedSort);
-                applyFilters(view);
-                originalConfigState = JSON.stringify(getUiConfig(view, true));
-                checkGlobalDirtyState();
-                updateDryRunWarning();
             });
 
             view.querySelector('#btnBackupConfig').addEventListener('click', () => {
@@ -1078,10 +1257,14 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         var grouped = {};
                         (config.Tags || []).forEach(t => {
                             if (!grouped[t.Tag]) grouped[t.Tag] = {
-                                Tag: t.Tag, Urls: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
-                                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified
+                                Tag: t.Tag, Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
+                                SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
+                                Limit: t.Limit || 0
                             };
-                            if (t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
+                            if (t.SourceType === 'External' && t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
+                            if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[t.Tag].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
+                            if (t.SourceType === 'MediaInfo') grouped[t.Tag].Limit = t.Limit;
                         });
 
                         var keys = Object.keys(grouped);

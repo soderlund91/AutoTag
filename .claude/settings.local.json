@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(test -d /c/Users/Håkan/AppData/Roaming/Emby-Server/system)",
+      "Bash(powershell.exe -Command \"Get-Command ilspycmd, dotnet-ilspycmd, ildasm\")",
+      "Bash(powershell.exe -NoProfile -Command \"[System.Reflection.Assembly]::LoadFile\\(''C:\\\\Users\\\\Håkan\\\\AppData\\\\Roaming\\\\Emby-Server\\\\system\\\\MediaBrowser.Controller.dll''\\).GetTypes\\(\\) | Where-Object { $_.Name -like ''*Playlist*'' } | ForEach-Object { Write-Host ''Class:'' $_.Name; Write-Host ''Methods:''; $_.GetMethods\\([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Static\\) | ForEach-Object { Write-Host ''  '' + $_.Name } }\")"
+    ]
+  }
+}

@@ -31,17 +31,21 @@
 
 	<ItemGroup>
 	  <Reference Include="MediaBrowser.Common">
-	    <HintPath>..\..\..\..\AppData\Roaming\Emby-Server\system\MediaBrowser.Common.dll</HintPath>
+	    <HintPath>$(AppData)\Emby-Server\system\MediaBrowser.Common.dll</HintPath>
 	    <Private>False</Private>
 	  </Reference>
 	  <Reference Include="MediaBrowser.Controller">
-	    <HintPath>..\..\..\..\AppData\Roaming\Emby-Server\system\MediaBrowser.Controller.dll</HintPath>
+	    <HintPath>$(AppData)\Emby-Server\system\MediaBrowser.Controller.dll</HintPath>
 	    <Private>False</Private>
 	  </Reference>
 	  <Reference Include="MediaBrowser.Model">
-	    <HintPath>..\..\..\..\AppData\Roaming\Emby-Server\system\MediaBrowser.Model.dll</HintPath>
+	    <HintPath>$(AppData)\Emby-Server\system\MediaBrowser.Model.dll</HintPath>
 	    <Private>False</Private>
 	  </Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Dependencies\" />
 	</ItemGroup>
 
 </Project>

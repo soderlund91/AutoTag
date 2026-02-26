@@ -16,9 +16,16 @@ namespace AutoTag
     public class TagConfig
     {
         public bool Active { get; set; } = true;
+        public string Name { get; set; } = "";
         public string Tag { get; set; } = "";
         public string Url { get; set; } = "";
         public int Limit { get; set; } = 50;
+        
+        public string SourceType { get; set; } = "External";
+        public string LocalSourceId { get; set; } = "";
+        public List<string> LocalSources { get; set; } = new List<string>();
+        public List<string> MediaInfoConditions { get; set; } = new List<string>();
+        
         public List<string> Blacklist { get; set; } = new List<string>();
         public List<DateInterval> ActiveIntervals { get; set; } = new List<DateInterval>();
 
