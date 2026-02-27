@@ -11,9 +11,9 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     var customCss = `
     <style id="autoTagCustomCss">
         .day-toggle {
-            background: rgba(0,0,0,0.2);
+            background: rgba(128,128,128,0.08);
             color: var(--theme-text-secondary);
-            border: 1px solid var(--theme-border-color-light);
+            border: 1px solid var(--line-color);
             border-radius: 4px;
             padding: 8px 12px;
             cursor: pointer;
@@ -35,12 +35,12 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             border-color: #52B54B;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
-        
+
         .date-row-container {
-            background: rgba(0,0,0,0.2); 
-            border: 1px solid var(--theme-border-color-light);
-            border-radius: 6px; 
-            padding: 15px; 
+            background: rgba(128,128,128,0.06);
+            border: 1px solid var(--line-color);
+            border-radius: 6px;
+            padding: 15px;
             margin-bottom: 10px;
         }
 
@@ -62,19 +62,19 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             gap: 4px;
             font-weight: 500;
         }
-        
+
         .tag-indicator.schedule {
-            color: #00a4dc; 
-            background: rgba(255,255,255,0.1); 
-            border: 1px solid rgba(0,164,220,0.3);
+            color: #00a4dc;
+            background: rgba(0,164,220,0.15);
+            border: 1px solid rgba(0,164,220,0.35);
         }
 
         .tag-indicator.collection {
-            color: #E0E0E0; 
-            background: rgba(255,255,255,0.1); 
-            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--theme-text-primary);
+            background: rgba(128,128,128,0.12);
+            border: 1px solid rgba(128,128,128,0.3);
         }
-        
+
         .badge-container {
             display: flex;
             align-items: center;
@@ -120,15 +120,15 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             background: var(--theme-background-level2);
             margin-bottom: 15px;
             border-radius: 6px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--line-color);
             border-left: 5px solid #52B54B;
             transition: all 0.2s ease;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.12);
             overflow: hidden;
         }
 
         .tag-row.inactive {
-            border-left-color: rgba(255, 255, 255, 0.8);
+            border-left-color: rgba(128,128,128,0.5);
         }
 
         .tag-row.dragging {
@@ -142,7 +142,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             background-color: transparent;
             margin-bottom: 15px;
             border-radius: 6px;
-            border: 2px dashed rgba(255, 255, 255, 0.1);
+            border: 2px dashed var(--line-color);
             transition: height 0.2s;
         }
 
@@ -162,10 +162,10 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 box-shadow: 0 0 15px rgba(0,164,220,0.5);
             }
             100% {
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-                border-right: 1px solid rgba(255, 255, 255, 0.08);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                border-top: 1px solid var(--line-color);
+                border-right: 1px solid var(--line-color);
+                border-bottom: 1px solid var(--line-color);
+                box-shadow: 0 2px 6px rgba(0,0,0,0.12);
             }
         }
 
@@ -177,19 +177,19 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 box-shadow: 0 0 15px rgba(82,181,75,0.5);
             }
             100% {
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-                border-right: 1px solid rgba(255, 255, 255, 0.08);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                border-top: 1px solid var(--line-color);
+                border-right: 1px solid var(--line-color);
+                border-bottom: 1px solid var(--line-color);
+                box-shadow: 0 2px 6px rgba(0,0,0,0.12);
             }
         }
 
         .control-row {
-            background: rgba(0,0,0,0.15);
+            background: rgba(128,128,128,0.06);
             padding: 12px;
             border-radius: 6px;
             margin-bottom: 20px;
-            border: 1px solid rgba(255,255,255,0.05);
+            border: 1px solid var(--line-color);
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -246,8 +246,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         #txtSearchTags {
             width: 100%;
-            background: rgba(255,255,255,0.05) !important;
-            border: 1px solid rgba(255,255,255,0.1) !important;
+            background: rgba(128,128,128,0.06) !important;
+            border: 1px solid var(--line-color) !important;
             border-radius: 4px !important;
             padding: 6px 30px 6px 35px !important;
             color: inherit;
@@ -256,7 +256,26 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         #txtSearchTags:focus {
             border-color: var(--theme-primary-color) !important;
-            background: rgba(255,255,255,0.1) !important;
+            background: rgba(128,128,128,0.1) !important;
+        }
+
+        .btn-row-remove {
+            background: transparent !important;
+            min-width: 40px;
+            width: 40px;
+            padding: 0;
+            color: #cc3333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: none;
+            margin-top: 12px;
+        }
+
+        .btn-neutral {
+            background: var(--theme-background-level2) !important;
+            border: 1px solid rgba(128,128,128,0.4) !important;
+            color: var(--theme-text-primary) !important;
         }
     </style>`;
 
@@ -272,7 +291,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     <input is="emby-input" class="txtUrlLimit" type="number" label="Max (0=All)" value="${lim}" min="0" />
                 </div>
                 <button type="button" is="emby-button" class="raised button-submit btnTestUrl" style="min-width:60px; height:36px; padding:0 10px; font-size:0.8rem; margin-top:12px;" title="Test Source"><span>Test</span></button>
-                <button type="button" is="emby-button" class="raised btnRemoveUrl" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none; margin-top:12px;" title="Remove URL"><i class="md-icon">remove_circle_outline</i></button>
+                <button type="button" is="emby-button" class="raised btnRemoveUrl btn-row-remove" title="Remove URL"><i class="md-icon">remove_circle_outline</i></button>
             </div>`;
     }
 
@@ -290,7 +309,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 <div style="width:110px;">
                     <input is="emby-input" class="txtLocalLimit" type="number" label="Max (0=All)" value="${lim}" min="0" />
                 </div>
-                <button type="button" is="emby-button" class="raised btnRemoveLocal" style="background:transparent !important; min-width:40px; width:40px; padding:0; color:#cc3333; display:flex; align-items:center; justify-content:center; box-shadow:none; margin-top:12px;" title="Remove"><i class="md-icon">remove_circle_outline</i></button>
+                <button type="button" is="emby-button" class="raised btnRemoveLocal btn-row-remove" title="Remove"><i class="md-icon">remove_circle_outline</i></button>
             </div>`;
     }
 
@@ -416,6 +435,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var enableColl = tagConfig.EnableCollection ? 'checked' : '';
         var onlyColl = tagConfig.OnlyCollection ? 'checked' : '';
         var collName = tagConfig.CollectionName || '';
+        var collDescription = tagConfig.CollectionDescription || '';
+        var collPosterPath = tagConfig.CollectionPosterPath || '';
 
         var sourceType = tagConfig.SourceType || "External";
         var localSources = tagConfig.LocalSources || [];
@@ -424,18 +445,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var mediaInfoLimit = tagConfig.Limit || 0;
 
         var mediaInfo = tagConfig.MediaInfoConditions || [];
-        var is4k = mediaInfo.includes("4K") ? "checked" : "";
-        var is1080p = mediaInfo.includes("1080p") ? "checked" : "";
-        var is720p = mediaInfo.includes("720p") ? "checked" : "";
-        var isHEVC = mediaInfo.includes("HEVC") ? "checked" : "";
-        var isAV1 = mediaInfo.includes("AV1") ? "checked" : "";
-        var isHDR = mediaInfo.includes("HDR") ? "checked" : "";
-        var isDolbyVision = mediaInfo.includes("DolbyVision") ? "checked" : "";
-        var isAtmos = mediaInfo.includes("Atmos") ? "checked" : "";
-        var isTrueHD = mediaInfo.includes("TrueHD") ? "checked" : "";
-        var isDTS = mediaInfo.includes("DTS") ? "checked" : "";
-        var is51 = mediaInfo.includes("5.1") ? "checked" : "";
-        var is71 = mediaInfo.includes("7.1") ? "checked" : "";
+        var chk = v => mediaInfo.includes(v) ? "checked" : "";
 
         var activeText = tagConfig.Active !== false ? "Active" : "Disabled";
         var activeColor = tagConfig.Active !== false ? "#52B54B" : "var(--theme-text-secondary)";
@@ -512,30 +522,30 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     <div class="source-external-container" style="display: ${sourceType === 'External' ? 'block' : 'none'};">
                         <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Source URLs</p>
                         <div class="url-list-container">${urls.map(u => getUrlRowHtml(u.url, u.limit)).join('')}</div>
-                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
+                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddUrl" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary);"><i class="md-icon" style="margin-right:5px;">add</i>Add another URL</button></div>
                     </div>
 
                     <div class="source-local-container" style="display: ${(sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') ? 'block' : 'none'};">
                         <p style="margin:10px 0 10px 0; font-size:0.9em; font-weight:bold; opacity:0.7;" class="local-type-label">${sourceType === 'LocalPlaylist' ? 'Select Playlists' : 'Select Collections'}</p>
                         <div class="local-list-container">${localSources.map(ls => getLocalRowHtml(sourceType, ls.id, ls.limit)).join('')}</div>
-                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddLocal" style="width:100%; background:transparent; border:1px dashed #555; color:#ccc;"><i class="md-icon" style="margin-right:5px;">add</i>Add another</button></div>
+                        <div style="margin-top:10px;"><button is="emby-button" type="button" class="raised btnAddLocal" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary);"><i class="md-icon" style="margin-right:5px;">add</i>Add another</button></div>
                     </div>
 
                     <div class="source-mediainfo-container" style="display: ${sourceType === 'MediaInfo' ? 'block' : 'none'};">
-                        <p style="margin:10px 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Select Media Requirements (Multiple allowed)</p>
+                        <p style="margin:10px 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Select Media Requirements</p>
                         <div class="media-info-grid">
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${is4k} /><span>4K Resolution</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${is1080p} /><span>Full HD (1080p)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${is720p} /><span>HD (720p)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${isHEVC} /><span>HEVC (H.265)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${isAV1} /><span>AV1 Codec</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${isHDR} /><span>HDR</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${isDolbyVision} /><span>Dolby Vision</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${isAtmos} /><span>Dolby Atmos</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${isTrueHD} /><span>Dolby TrueHD</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${isDTS} /><span>DTS Audio</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${is51} /><span>5.1 Channels</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${is71} /><span>7.1 Channels</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${chk("4K")} /><span>4K Resolution</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${chk("1080p")} /><span>Full HD (1080p)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${chk("720p")} /><span>HD (720p)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${chk("HEVC")} /><span>HEVC (H.265)</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${chk("AV1")} /><span>AV1 Codec</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${chk("HDR")} /><span>HDR</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${chk("DolbyVision")} /><span>Dolby Vision</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${chk("Atmos")} /><span>Dolby Atmos</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${chk("TrueHD")} /><span>Dolby TrueHD</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${chk("DTS")} /><span>DTS Audio</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${chk("5.1")} /><span>5.1 Channels</span></label>
+                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${chk("7.1")} /><span>7.1 Channels</span></label>
                         </div>
                         <div style="width:110px; margin-top:15px;">
                             <input is="emby-input" class="txtMediaInfoLimit" type="number" label="Max (0=All)" value="${mediaInfoLimit}" min="0" />
@@ -546,7 +556,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 <div class="tab-content schedule-tab" style="display:none;">
                     <p style="margin:0 0 15px 0; font-size:0.9em; opacity:0.8;">Define when this tag should be active. If empty, it's always active.</p>
                     <div class="date-list-container">${intervals.map(i => getDateRowHtml(i)).join('')}</div>
-                    <button is="emby-button" type="button" class="btnAddDate" style="width:100%; background:transparent; border:1px dashed #555; margin-top:10px;"><i class="md-icon" style="margin-right:5px;">event</i>Add Schedule Rule</button>
+                    <button is="emby-button" type="button" class="btnAddDate" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary); margin-top:10px;"><i class="md-icon" style="margin-right:5px;">event</i>Add Schedule Rule</button>
                 </div>
 
                 <div class="tab-content collection-tab" style="display:none;">
@@ -558,7 +568,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         <div class="fieldDescription">Automatically create and maintain an Emby Collection from these items.</div>
                     </div>
                     
-                    <div class="collection-settings" style="margin-left: 20px; padding-left: 15px; border-left: 2px solid rgba(255,255,255,0.1); margin-top: 10px; display: ${tagConfig.EnableCollection ? 'block' : 'none'};">
+                    <div class="collection-settings" style="margin-left: 20px; padding-left: 15px; border-left: 2px solid var(--line-color); margin-top: 10px; display: ${tagConfig.EnableCollection ? 'block' : 'none'};">
                         <div class="inputContainer">
                             <input is="emby-input" type="text" class="txtCollectionName" label="Collection Name" value="${collName}" placeholder="${tagName}" />
                             <div class="fieldDescription">Leave empty to use Tag Name.</div>
@@ -571,6 +581,27 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                             </label>
                             <div class="fieldDescription">If checked, items will be added to the collection but NOT tagged with "${tagName}".</div>
                         </div>
+
+                        <div class="inputContainer" style="margin-top:15px;">
+                            <textarea is="emby-textarea" class="txtCollectionDescription" rows="3"
+                                label="Description"
+                                placeholder="Optional description for this collection..."
+                                style="width:100%; resize:vertical; box-sizing:border-box;">${collDescription}</textarea>
+                        </div>
+
+                        <div style="margin-top:15px;">
+                            <p style="margin:0 0 8px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Collection Poster</p>
+                            <div class="poster-preview-container" style="margin-bottom:8px; display:${collPosterPath ? 'block' : 'none'};">
+                                <span class="poster-filename" style="font-size:0.85em; opacity:0.7;">${collPosterPath ? collPosterPath.split(/[\\\\/]/).pop() : ''}</span>
+                                <button type="button" class="btnRemovePoster" style="margin-left:10px; font-size:0.8em; background:transparent; border:none; color:#e55; cursor:pointer; vertical-align:middle;">✕ Remove</button>
+                            </div>
+                            <img class="poster-preview-img" src="" alt="" style="max-width:120px; max-height:180px; border-radius:4px; display:none; margin-bottom:8px;" />
+                            <input type="file" class="inputPosterFile" accept="image/*" style="display:none;" />
+                            <input type="hidden" class="hiddenPosterPath" value="${collPosterPath}" />
+                            <button type="button" is="emby-button" class="btnChoosePoster raised" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary);">
+                                <i class="md-icon" style="margin-right:5px;">image</i>Choose Poster Image
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -582,7 +613,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     </div>
                 </div>
 
-                <div style="text-align:right; margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;"><button is="emby-button" type="button" class="raised btnRemoveGroup" style="background:#cc3333 !important; color:#fff;"><i class="md-icon" style="margin-right:5px;">delete</i>Remove Tag Group</button></div>
+                <div style="text-align:right; margin-top:20px; border-top:1px solid var(--line-color); padding-top:10px;"><button is="emby-button" type="button" class="raised btnRemoveGroup" style="background:#cc3333 !important; color:#fff;"><i class="md-icon" style="margin-right:5px;">delete</i>Remove Group</button></div>
             </div>
         </div>`;
 
@@ -803,6 +834,56 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
             checkGlobalDirtyState();
         });
+
+        row.querySelector('.btnChoosePoster').addEventListener('click', function () {
+            row.querySelector('.inputPosterFile').click();
+        });
+
+        row.querySelector('.inputPosterFile').addEventListener('change', function () {
+            var file = this.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var dataUrl = e.target.result;
+                var base64 = dataUrl.split(',')[1];
+                var img = row.querySelector('.poster-preview-img');
+                img.src = dataUrl;
+                img.style.display = 'block';
+
+                var headers = { 'Content-Type': 'application/json' };
+                var token = window.ApiClient.accessToken();
+                if (token) headers['X-Emby-Token'] = token;
+                fetch(window.ApiClient.getUrl('AutoTag/UploadCollectionImage'), {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ FileName: file.name, Base64Data: base64 })
+                }).then(function (r) { return r.json(); })
+                .then(function (result) {
+                    if (result.Success) {
+                        row.querySelector('.hiddenPosterPath').value = result.FilePath;
+                        row.querySelector('.poster-filename').textContent = file.name;
+                        row.querySelector('.poster-preview-container').style.display = 'block';
+                        checkGlobalDirtyState();
+                    } else {
+                        window.Dashboard.alert('Upload failed: ' + (result.Message || 'Unknown error'));
+                        img.style.display = 'none';
+                    }
+                }).catch(function () {
+                    window.Dashboard.alert('Upload error. Check server logs.');
+                    img.style.display = 'none';
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+
+        row.querySelector('.btnRemovePoster').addEventListener('click', function () {
+            row.querySelector('.hiddenPosterPath').value = '';
+            row.querySelector('.poster-filename').textContent = '';
+            row.querySelector('.poster-preview-container').style.display = 'none';
+            row.querySelector('.poster-preview-img').style.display = 'none';
+            row.querySelector('.inputPosterFile').value = '';
+            checkGlobalDirtyState();
+        });
     }
 
     function updateCount(row) {
@@ -889,6 +970,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var enableColl = row.querySelector('.chkEnableCollection').checked;
             var onlyColl = row.querySelector('.chkOnlyCollection').checked;
             var collName = row.querySelector('.txtCollectionName').value;
+            var collDescription = row.querySelector('.txtCollectionDescription') ? row.querySelector('.txtCollectionDescription').value : '';
+            var collPoster = row.querySelector('.hiddenPosterPath') ? row.querySelector('.hiddenPosterPath').value : '';
 
             var intervals = [];
             row.querySelectorAll('.date-row').forEach(dr => {
@@ -922,43 +1005,27 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var mi = [];
             row.querySelectorAll('.chkMediaInfo:checked').forEach(cb => mi.push(cb.value));
 
+            var baseTag = {
+                Name: entryLabel, Tag: name, Active: active, Blacklist: bl, ActiveIntervals: intervals,
+                EnableCollection: enableColl, CollectionName: collName, CollectionDescription: collDescription, CollectionPosterPath: collPoster, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                SourceType: st, MediaInfoConditions: mi
+            };
+
             if (st === 'External') {
                 row.querySelectorAll('.url-row').forEach(uRow => {
                     var urlVal = uRow.querySelector('.txtTagUrl').value.trim();
-
-                    var limitStr = uRow.querySelector('.txtUrlLimit').value;
-                    var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
-                    if (isNaN(limitVal)) limitVal = 0;
-
-                    if (urlVal) flatTags.push({
-                        Name: entryLabel, Tag: name, Url: urlVal, Active: active, Limit: limitVal, Blacklist: bl, ActiveIntervals: intervals,
-                        EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
-                        SourceType: st, LocalSourceId: "", MediaInfoConditions: mi
-                    });
+                    var limitVal = parseInt(uRow.querySelector('.txtUrlLimit').value, 10) || 0;
+                    if (urlVal) flatTags.push(Object.assign({}, baseTag, { Url: urlVal, Limit: limitVal, LocalSourceId: "" }));
                 });
             } else if (st === 'LocalCollection' || st === 'LocalPlaylist') {
                 row.querySelectorAll('.local-row').forEach(lRow => {
                     var localVal = lRow.querySelector('.selLocalSource').value;
-                    var limitStr = lRow.querySelector('.txtLocalLimit').value;
-                    var limitVal = limitStr ? parseInt(limitStr, 10) : 0;
-                    if (isNaN(limitVal)) limitVal = 0;
-
-                    if (localVal) flatTags.push({
-                        Name: entryLabel, Tag: name, Url: "", Active: active, Limit: limitVal, Blacklist: bl, ActiveIntervals: intervals,
-                        EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
-                        SourceType: st, LocalSourceId: localVal, MediaInfoConditions: mi
-                    });
+                    var limitVal = parseInt(lRow.querySelector('.txtLocalLimit').value, 10) || 0;
+                    if (localVal) flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: limitVal, LocalSourceId: localVal }));
                 });
             } else {
-                var miLimitStr = row.querySelector('.txtMediaInfoLimit') ? row.querySelector('.txtMediaInfoLimit').value : "0";
-                var miLimitVal = parseInt(miLimitStr, 10);
-                if (isNaN(miLimitVal)) miLimitVal = 0;
-
-                flatTags.push({
-                    Name: entryLabel, Tag: name, Url: "", Active: active, Limit: miLimitVal, Blacklist: bl, ActiveIntervals: intervals,
-                    EnableCollection: enableColl, CollectionName: collName, OnlyCollection: onlyColl, LastModified: currentLastMod,
-                    SourceType: st, LocalSourceId: "", MediaInfoConditions: mi
-                });
+                var miLimitVal = parseInt((row.querySelector('.txtMediaInfoLimit') || {}).value, 10) || 0;
+                flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: miLimitVal, LocalSourceId: "" }));
             }
         });
 
@@ -1031,6 +1098,58 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         });
     }
 
+    function checkForUpdates(view) {
+        if (view.querySelector('#autoTagVersionBadge')) return;
+
+        window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/Version")).then(function (result) {
+            var currentVer = result.Version || '';
+            if (!currentVer) return;
+
+            fetch('https://api.github.com/repos/soderlund91/AutoTag/releases/latest')
+                .then(function (r) { return r.json(); })
+                .then(function (release) {
+                    var latestTag = (release.tag_name || '').replace(/^v/i, '');
+                    if (!latestTag) return;
+                    var a = latestTag.split('.').map(Number);
+                    var b = currentVer.split('.').map(Number);
+                    var isNewer = false;
+                    for (var i = 0; i < 3; i++) {
+                        if ((a[i] || 0) > (b[i] || 0)) { isNewer = true; break; }
+                        if ((a[i] || 0) < (b[i] || 0)) break;
+                    }
+                    if (isNewer) {
+                        var container = view.querySelector('#versionBadgeArea');
+                        if (!container) return;
+                        var badge = document.createElement('div');
+                        badge.id = 'autoTagVersionBadge';
+                        badge.style.cssText = 'font-size:1.2em; padding: 0 0 10px 0;';
+                        badge.innerHTML = '<a href="' + release.html_url + '" target="_blank" rel="noopener"'
+                            + ' style="color:#E67E22; font-weight:bold; text-decoration:none;">'
+                            + 'New update: v' + latestTag + ' available</a>';
+                        container.appendChild(badge);
+                    }
+                })
+                .catch(function () {});
+        }).catch(function () {});
+    }
+
+    function groupConfigTags(tags) {
+        var grouped = {};
+        (tags || []).forEach(t => {
+            var key = t.Name ? t.Name + '\x1F' + t.Tag : t.Tag;
+            if (!grouped[key]) grouped[key] = {
+                Tag: t.Tag, Name: t.Name || '', Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, CollectionDescription: t.CollectionDescription || '', CollectionPosterPath: t.CollectionPosterPath || '', OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
+                SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
+                Limit: t.Limit || 0
+            };
+            if (t.SourceType === 'External' && t.Url) grouped[key].Urls.push({ url: t.Url, limit: t.Limit });
+            if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[key].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
+            if (t.SourceType === 'MediaInfo') grouped[key].Limit = t.Limit;
+        });
+        return grouped;
+    }
+
     return function (view) {
         view.addEventListener('viewshow', () => {
             if (!document.getElementById('autoTagCustomCss')) {
@@ -1078,11 +1197,10 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var btnSave = view.querySelector('.btn-save');
             if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; }
 
-            view.querySelector('#txtTraktClientId').addEventListener('input', checkGlobalDirtyState);
-            view.querySelector('#txtMdblistApiKey').addEventListener('input', checkGlobalDirtyState);
-            view.querySelector('#chkExtendedConsoleOutput').addEventListener('change', checkGlobalDirtyState);
-            view.querySelector('#chkDryRunMode').addEventListener('change', checkGlobalDirtyState);
+            ['#txtTraktClientId', '#txtMdblistApiKey'].forEach(id => view.querySelector(id).addEventListener('input', checkGlobalDirtyState));
+            ['#chkExtendedConsoleOutput', '#chkDryRunMode'].forEach(id => view.querySelector(id).addEventListener('change', checkGlobalDirtyState));
 
+            checkForUpdates(view);
             refreshStatus(view);
             statusInterval = setInterval(() => refreshStatus(view), 5000);
 
@@ -1122,20 +1240,20 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     
                     <span class="control-label" style="opacity:0.7; margin-right: 10px; flex-shrink: 0;">Sort:</span>
 
-                    <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); padding:5px; border-radius:4px; font-size:0.9em; cursor:pointer; width: 80px; margin-right: 0px;">
+                    <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(128,128,128,0.08); border:1px solid var(--line-color); padding:5px; border-radius:4px; font-size:0.9em; cursor:pointer; width: 80px; margin-right: 0px;">
                         <option value="Manual" ${savedSort === 'Manual' ? 'selected' : ''}>Manual</option>
                         <option value="Name" ${savedSort === 'Name' ? 'selected' : ''}>Name</option>
                         <option value="Active" ${savedSort === 'Active' ? 'selected' : ''}>Status</option>
                         <option value="LatestEdited" ${savedSort === 'LatestEdited' ? 'selected' : ''}>Latest</option>
                     </select>
 
-                    <div style="width: 1px; height: 25px; background: rgba(255,255,255,0.1); margin-right: 10px;"></div>
+                    <div style="width: 1px; height: 25px; background: var(--line-color); margin-right: 10px;"></div>
 
                     <span class="control-label" style="opacity:0.7; margin-right: 20px; flex-shrink: 0;"> | Filters:</span>
                     
                     <div class="search-input-wrapper" style="width: 200px !important; margin-right: 10px; flex-shrink: 0;">
                         <i class="md-icon search-icon">search</i>
-                        <input type="text" id="txtSearchTags" placeholder="Search..." autocomplete="off" style="padding-left: 28px !important; background: rgba(0,0,0,0.2) !important; border: 1px solid rgba(255,255,255,0.1) !important; width: 100% !important;" />
+                        <input type="text" id="txtSearchTags" placeholder="Search..." autocomplete="off" style="padding-left: 28px !important; background: rgba(128,128,128,0.06) !important; border: 1px solid var(--line-color) !important; width: 100% !important;" />
                         <i class="md-icon" id="btnClearSearch">close</i>
                     </div>
 
@@ -1203,18 +1321,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     if (view.querySelector('#chkFilterSchedule')) view.querySelector('#chkFilterSchedule').checked = false;
                     if (view.querySelector('#chkFilterCollection')) view.querySelector('#chkFilterCollection').checked = false;
 
-                    var grouped = {};
-                    (config.Tags || []).forEach(t => {
-                        if (!grouped[t.Tag]) grouped[t.Tag] = {
-                            Tag: t.Tag, Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
-                            EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
-                            SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
-                            Limit: t.Limit || 0
-                        };
-                        if (t.SourceType === 'External' && t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
-                        if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[t.Tag].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
-                        if (t.SourceType === 'MediaInfo') grouped[t.Tag].Limit = t.Limit;
-                    });
+                    var grouped = groupConfigTags(config.Tags);
 
                     var keys = Object.keys(grouped);
                     keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
@@ -1254,18 +1361,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
 
                         var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
-                        var grouped = {};
-                        (config.Tags || []).forEach(t => {
-                            if (!grouped[t.Tag]) grouped[t.Tag] = {
-                                Tag: t.Tag, Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
-                                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
-                                SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
-                                Limit: t.Limit || 0
-                            };
-                            if (t.SourceType === 'External' && t.Url) grouped[t.Tag].Urls.push({ url: t.Url, limit: t.Limit });
-                            if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[t.Tag].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
-                            if (t.SourceType === 'MediaInfo') grouped[t.Tag].Limit = t.Limit;
-                        });
+                        var grouped = groupConfigTags(config.Tags);
 
                         var keys = Object.keys(grouped);
                         keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));

@@ -94,6 +94,8 @@ namespace AutoTag
                 var fetcher = new ListFetcher(_httpClient, _jsonSerializer);
                 var desiredTagsMap = new Dictionary<Guid, HashSet<string>>();
                 var desiredCollectionsMap = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+                var collectionDescriptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var collectionPosters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 var managedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var activeCollections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var failedFetches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -129,7 +131,14 @@ namespace AutoTag
                     }
 
                     string cName = string.IsNullOrWhiteSpace(tagConfig.CollectionName) ? tagName : tagConfig.CollectionName.Trim();
-                    if (tagConfig.EnableCollection) activeCollections.Add(cName);
+                    if (tagConfig.EnableCollection)
+                    {
+                        activeCollections.Add(cName);
+                        if (!string.IsNullOrWhiteSpace(tagConfig.CollectionDescription))
+                            collectionDescriptions[cName] = tagConfig.CollectionDescription;
+                        if (!string.IsNullOrWhiteSpace(tagConfig.CollectionPosterPath) && File.Exists(tagConfig.CollectionPosterPath))
+                            collectionPosters[cName] = tagConfig.CollectionPosterPath;
+                    }
 
                     try
                     {
@@ -376,6 +385,13 @@ namespace AutoTag
                         {
                             collCreated++;
                             if (debug) LogDebug($"Created collection '{cName}'  ({desiredIds.Count} items)");
+                            if (collectionDescriptions.ContainsKey(cName) || collectionPosters.ContainsKey(cName))
+                            {
+                                var newColl = _libraryManager.GetItemList(new InternalItemsQuery
+                                    { IncludeItemTypes = new[] { "BoxSet" }, Name = cName, Recursive = true }).FirstOrDefault();
+                                if (newColl != null)
+                                    ApplyCollectionMeta(newColl, cName, collectionDescriptions, collectionPosters, debug);
+                            }
                         }
                     }
                     else
@@ -392,6 +408,8 @@ namespace AutoTag
                             collUpdated++;
                             if (debug) LogDebug($"Collection '{cName}': +{toAdd.Count} added, -{toRemove.Count} removed");
                         }
+                        if (!dryRun && (collectionDescriptions.ContainsKey(cName) || collectionPosters.ContainsKey(cName)))
+                            ApplyCollectionMeta(existingColl, cName, collectionDescriptions, collectionPosters, debug);
                     }
                 }
                 if (collCreated > 0 || collUpdated > 0)
@@ -609,6 +627,37 @@ namespace AutoTag
         private void SaveFileHistory(string filename, List<string> data)
         {
             try { var path = Path.Combine(Plugin.Instance.DataFolderPath, filename); Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllLines(path, data); } catch { }
+        }
+
+        private void ApplyCollectionMeta(BaseItem item, string cName,
+            Dictionary<string, string> descriptions, Dictionary<string, string> posters, bool debug)
+        {
+            bool metaChanged = false;
+
+            if (descriptions.TryGetValue(cName, out var desc) && !string.IsNullOrWhiteSpace(desc))
+            {
+                item.Overview = desc;
+                metaChanged = true;
+            }
+
+            if (posters.TryGetValue(cName, out var posterPath) && File.Exists(posterPath))
+            {
+                var imageInfo = new ItemImageInfo
+                {
+                    Path = posterPath,
+                    Type = ImageType.Primary,
+                    DateModified = File.GetLastWriteTimeUtc(posterPath)
+                };
+                var otherImages = (item.ImageInfos ?? Array.Empty<ItemImageInfo>())
+                    .Where(i => i.Type != ImageType.Primary).ToList();
+                otherImages.Add(imageInfo);
+                item.ImageInfos = otherImages.ToArray();
+                _libraryManager.UpdateItem(item, item.Parent, ItemUpdateType.ImageUpdate, null);
+                if (debug) LogDebug($"Applied poster to '{cName}'");
+            }
+
+            if (metaChanged)
+                _libraryManager.UpdateItem(item, item.Parent, ItemUpdateType.MetadataEdit, null);
         }
     }
 }

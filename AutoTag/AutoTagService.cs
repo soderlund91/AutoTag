@@ -5,6 +5,7 @@ using MediaBrowser.Model.Services;
 using MediaBrowser.Model.Tasks;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,28 @@ namespace AutoTag
 
     [Route("/AutoTag/Status", "GET")]
     public class GetStatusRequest : IReturn<StatusResponse> { }
+
+    [Route("/AutoTag/Version", "GET")]
+    public class VersionRequest : IReturn<VersionResponse> { }
+
+    public class VersionResponse
+    {
+        public string Version { get; set; } = "";
+    }
+
+    [Route("/AutoTag/UploadCollectionImage", "POST")]
+    public class UploadCollectionImageRequest : IReturn<UploadCollectionImageResponse>
+    {
+        public string FileName { get; set; } = "";
+        public string Base64Data { get; set; } = "";
+    }
+
+    public class UploadCollectionImageResponse
+    {
+        public bool Success { get; set; }
+        public string FilePath { get; set; } = "";
+        public string Message { get; set; } = "";
+    }
 
     public class TestUrlResponse
     {
@@ -46,6 +69,11 @@ namespace AutoTag
             _jsonSerializer = jsonSerializer;
         }
 
+        public object Get(VersionRequest request)
+        {
+            return new VersionResponse { Version = Plugin.Instance?.Version.ToString() ?? "0.0.0" };
+        }
+
         public object Get(GetStatusRequest request)
         {
             List<string> logs;
@@ -56,6 +84,32 @@ namespace AutoTag
                 Logs = logs,
                 IsRunning = AutoTagTask.IsRunning
             };
+        }
+
+        public object Post(UploadCollectionImageRequest request)
+        {
+            try
+            {
+                var dataPath = Plugin.Instance?.DataFolderPath;
+                if (dataPath == null) return new UploadCollectionImageResponse { Success = false, Message = "Plugin not initialized" };
+
+                var imagesDir = Path.Combine(dataPath, "collection_images");
+                Directory.CreateDirectory(imagesDir);
+
+                var ext = Path.GetExtension(request.FileName ?? "").ToLowerInvariant();
+                if (!new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" }.Contains(ext)) ext = ".jpg";
+
+                var fileName = $"{Guid.NewGuid():N}{ext}";
+                var filePath = Path.Combine(imagesDir, fileName);
+
+                File.WriteAllBytes(filePath, Convert.FromBase64String(request.Base64Data));
+
+                return new UploadCollectionImageResponse { Success = true, FilePath = filePath };
+            }
+            catch (Exception ex)
+            {
+                return new UploadCollectionImageResponse { Success = false, Message = ex.Message };
+            }
         }
 
         public async Task<object> Get(TestUrlRequest request)
