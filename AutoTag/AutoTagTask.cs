@@ -165,7 +165,7 @@ namespace AutoTag
                                         continue;
                                     }
 
-                                    if (!tagConfig.OnlyCollection)
+                                    if (tagConfig.EnableTag && !tagConfig.OnlyCollection)
                                         TagCacheManager.Instance.AddToCache($"imdb_{extItem.Imdb}", tagName);
 
                                     if (imdbLookup.TryGetValue(extItem.Imdb, out var localItems))
@@ -281,7 +281,7 @@ namespace AutoTag
                                 var imdb = item.GetProviderId("Imdb");
                                 if (!string.IsNullOrEmpty(imdb) && blacklist.Contains(imdb)) continue;
 
-                                if (ItemMatchesMediaInfo(item, tagConfig.MediaInfoConditions, debug, seriesEpisodeCache))
+                                if (ItemMatchesMediaInfo(item, tagConfig, debug, seriesEpisodeCache))
                                 {
                                     matchedLocalItems.Add(item);
                                 }
@@ -296,7 +296,7 @@ namespace AutoTag
                             foreach (var localItem in matchedLocalItems)
                             {
                                 matchCount++;
-                                if (!tagConfig.OnlyCollection)
+                                if (tagConfig.EnableTag && !tagConfig.OnlyCollection)
                                 {
                                     if (!desiredTagsMap.ContainsKey(localItem.Id))
                                         desiredTagsMap[localItem.Id] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -471,16 +471,15 @@ namespace AutoTag
             return false;
         }
 
-        private bool ItemMatchesMediaInfo(BaseItem item, List<string> conditions, bool debug, Dictionary<long, BaseItem>? seriesEpisodeCache = null)
+        private bool ItemMatchesMediaInfo(BaseItem item, TagConfig tagConfig, bool debug, Dictionary<long, BaseItem>? seriesEpisodeCache = null)
         {
-            if (conditions == null || conditions.Count == 0) return true;
-
-            bool is4k = false, is1080 = false, is720 = false, isHevc = false, isAv1 = false;
-            bool isHdr = false, isDv = false, isAtmos = false, isTrueHd = false, isDts = false;
-            bool is51 = false, is71 = false;
+            var filters = tagConfig.MediaInfoFilters;
+            var legacy = tagConfig.MediaInfoConditions;
+            bool hasFilters = filters != null && filters.Count > 0;
+            bool hasLegacy = legacy != null && legacy.Count > 0;
+            if (!hasFilters && !hasLegacy) return true;
 
             BaseItem itemToCheck = item;
-
             if (item.GetType().Name.Contains("Series"))
             {
                 if (seriesEpisodeCache != null)
@@ -510,10 +509,13 @@ namespace AutoTag
                 }
             }
 
+            bool is4k = false, is1080 = false, is720 = false, isHevc = false, isAv1 = false;
+            bool isHdr = false, isDv = false, isAtmos = false, isTrueHd = false, isDts = false;
+            bool is51 = false, is71 = false;
+
             try
             {
                 dynamic dynItem = itemToCheck;
-
                 try {
                     int defaultWidth = (int)dynItem.Width;
                     if (defaultWidth >= 3800) is4k = true;
@@ -523,21 +525,13 @@ namespace AutoTag
 
                 System.Collections.IEnumerable streams = null;
                 try { streams = dynItem.GetMediaStreams(); } catch { }
-                
                 if (streams == null) {
                     try {
                         var sources = dynItem.GetMediaSources(false);
-                        if (sources != null) {
-                            foreach (var src in sources) {
-                                if (src.MediaStreams != null) { streams = src.MediaStreams; break; }
-                            }
-                        }
+                        if (sources != null) { foreach (var src in sources) { if (src.MediaStreams != null) { streams = src.MediaStreams; break; } } }
                     } catch { }
                 }
-
-                if (streams == null) {
-                    try { streams = dynItem.MediaStreams; } catch { }
-                }
+                if (streams == null) { try { streams = dynItem.MediaStreams; } catch { } }
 
                 if (streams != null)
                 {
@@ -553,16 +547,9 @@ namespace AutoTag
 
                             if (type.Equals("Video", StringComparison.OrdinalIgnoreCase))
                             {
-                                try {
-                                    int w = (int)stream.Width;
-                                    if (w >= 3800) is4k = true;
-                                    else if (w >= 1900) is1080 = true;
-                                    else if (w >= 1200) is720 = true;
-                                } catch { }
-
+                                try { int w = (int)stream.Width; if (w >= 3800) is4k = true; else if (w >= 1900) is1080 = true; else if (w >= 1200) is720 = true; } catch { }
                                 if (codec.IndexOf("hevc", StringComparison.OrdinalIgnoreCase) >= 0 || codec.IndexOf("h265", StringComparison.OrdinalIgnoreCase) >= 0) isHevc = true;
                                 if (codec.IndexOf("av1", StringComparison.OrdinalIgnoreCase) >= 0) isAv1 = true;
-
                                 if (profile.IndexOf("dv", StringComparison.OrdinalIgnoreCase) >= 0 || profile.IndexOf("dolby vision", StringComparison.OrdinalIgnoreCase) >= 0) isDv = true;
                                 if (videoRange.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
                                 if (profile.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
@@ -572,12 +559,7 @@ namespace AutoTag
                                 if (profile.IndexOf("atmos", StringComparison.OrdinalIgnoreCase) >= 0) isAtmos = true;
                                 if (codec.IndexOf("truehd", StringComparison.OrdinalIgnoreCase) >= 0) isTrueHd = true;
                                 if (codec.IndexOf("dts", StringComparison.OrdinalIgnoreCase) >= 0) isDts = true;
-
-                                try {
-                                    int ch = (int)stream.Channels;
-                                    if (ch == 6) is51 = true;
-                                    if (ch >= 8) is71 = true;
-                                } catch { }
+                                try { int ch = (int)stream.Channels; if (ch == 6) is51 = true; if (ch >= 8) is71 = true; } catch { }
                             }
                         }
                         catch { }
@@ -586,23 +568,48 @@ namespace AutoTag
             }
             catch { }
 
-            foreach (var cond in conditions)
+            if (hasFilters)
             {
-                if (cond == "4K" && !is4k) return false;
-                if (cond == "1080p" && !is1080) return false;
-                if (cond == "720p" && !is720) return false;
-                if (cond == "HEVC" && !isHevc) return false;
-                if (cond == "AV1" && !isAv1) return false;
-                if (cond == "HDR" && !isHdr && !isDv) return false;
-                if (cond == "DolbyVision" && !isDv) return false;
-                if (cond == "Atmos" && !isAtmos) return false;
-                if (cond == "TrueHD" && !isTrueHd) return false;
-                if (cond == "DTS" && !isDts) return false;
-                if (cond == "5.1" && !is51) return false;
-                if (cond == "7.1" && !is71) return false;
+                // All filter groups must pass (AND between groups)
+                foreach (var filter in filters!)
+                {
+                    if (filter.Criteria == null || filter.Criteria.Count == 0) continue;
+                    bool isOr = string.Equals(filter.Operator, "OR", StringComparison.OrdinalIgnoreCase);
+                    bool groupPass = isOr
+                        ? filter.Criteria.Any(c => EvaluateCriterion(c, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71))
+                        : filter.Criteria.All(c => EvaluateCriterion(c, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71));
+                    if (!groupPass) return false;
+                }
+                return true;
             }
 
+            // Legacy: all conditions must match (AND)
+            foreach (var cond in legacy!)
+            {
+                if (!EvaluateCriterion(cond, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71))
+                    return false;
+            }
             return true;
+        }
+
+        private static bool EvaluateCriterion(string cond, bool is4k, bool is1080, bool is720, bool isHevc, bool isAv1, bool isHdr, bool isDv, bool isAtmos, bool isTrueHd, bool isDts, bool is51, bool is71)
+        {
+            return cond switch
+            {
+                "4K" => is4k,
+                "1080p" => is1080,
+                "720p" => is720,
+                "HEVC" => isHevc,
+                "AV1" => isAv1,
+                "HDR" => isHdr || isDv,
+                "DolbyVision" => isDv,
+                "Atmos" => isAtmos,
+                "TrueHD" => isTrueHd,
+                "DTS" => isDts,
+                "5.1" => is51,
+                "7.1" => is71,
+                _ => false
+            };
         }
 
         private void LogSummary(string message, string level = "Info")

@@ -4,6 +4,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     var pluginId = "7c10708f-43e4-4d69-923c-77d01802315b";
     var statusInterval = null;
     var originalConfigState = null;
+    var statusRequestId = 0;
 
     var cachedCollections = [];
     var cachedPlaylists = [];
@@ -421,6 +422,45 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
+    var _fgCounter = 0;
+    function getMediaInfoFilterGroupHtml(filter, i) {
+        var op = (filter && filter.Operator) || 'AND';
+        var criteria = (filter && filter.Criteria) || [];
+        var chkF = v => criteria.includes(v) ? 'checked' : '';
+        var gid = 'fg_' + (++_fgCounter) + '_' + i;
+        return `
+        <div class="mediainfo-filter-group" style="border:1px solid rgba(128,128,128,0.3); border-radius:6px; padding:12px; margin-bottom:10px; background:rgba(128,128,128,0.03);">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <span style="font-size:0.8em; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; opacity:0.6;">Match:</span>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" class="rdoFilterOp" name="${gid}" value="AND" ${op === 'AND' ? 'checked' : ''} />
+                        <span style="font-size:0.85em;">All of (AND)</span>
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" class="rdoFilterOp" name="${gid}" value="OR" ${op === 'OR' ? 'checked' : ''} />
+                        <span style="font-size:0.85em;">Any of (OR)</span>
+                    </label>
+                </div>
+                <button type="button" class="btnRemoveFilterGroup" style="background:transparent; border:none; color:#cc3333; cursor:pointer; padding:2px 8px; font-size:0.85em; flex-shrink:0;">✕ Remove</button>
+            </div>
+            <div class="media-info-grid">
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${chkF("4K")} /><span>4K Resolution</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${chkF("1080p")} /><span>Full HD (1080p)</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${chkF("720p")} /><span>HD (720p)</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${chkF("HEVC")} /><span>HEVC (H.265)</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${chkF("AV1")} /><span>AV1 Codec</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${chkF("HDR")} /><span>HDR</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${chkF("DolbyVision")} /><span>Dolby Vision</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${chkF("Atmos")} /><span>Dolby Atmos</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${chkF("TrueHD")} /><span>Dolby TrueHD</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${chkF("DTS")} /><span>DTS Audio</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${chkF("5.1")} /><span>5.1 Channels</span></label>
+                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${chkF("7.1")} /><span>7.1 Channels</span></label>
+            </div>
+        </div>`;
+    }
+
     function renderTagGroup(tagConfig, container, prepend, index, isNew) {
         var isChecked = tagConfig.Active !== false ? 'checked' : '';
         var tagName = tagConfig.Tag || '';
@@ -432,6 +472,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         var lastMod = tagConfig.LastModified || new Date().toISOString();
 
+        var enableTag = tagConfig.EnableTag !== false ? 'checked' : '';
         var enableColl = tagConfig.EnableCollection ? 'checked' : '';
         var onlyColl = tagConfig.OnlyCollection ? 'checked' : '';
         var collName = tagConfig.CollectionName || '';
@@ -444,8 +485,13 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         var mediaInfoLimit = tagConfig.Limit || 0;
 
-        var mediaInfo = tagConfig.MediaInfoConditions || [];
-        var chk = v => mediaInfo.includes(v) ? "checked" : "";
+        // Migrate legacy flat conditions to a single AND group if new format not present
+        var mediaFilters = (tagConfig.MediaInfoFilters && tagConfig.MediaInfoFilters.length > 0)
+            ? tagConfig.MediaInfoFilters
+            : ((tagConfig.MediaInfoConditions && tagConfig.MediaInfoConditions.length > 0)
+                ? [{ Operator: 'AND', Criteria: tagConfig.MediaInfoConditions }]
+                : []);
+        var filterGroupsHtml = mediaFilters.map((f, i) => getMediaInfoFilterGroupHtml(f, i)).join('');
 
         var activeText = tagConfig.Active !== false ? "Active" : "Disabled";
         var activeColor = tagConfig.Active !== false ? "#52B54B" : "var(--theme-text-secondary)";
@@ -490,7 +536,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         </label>
                     </div>
                     <div class="tag-info" style="display:flex; align-items:center;">
-                        <span class="tag-title" style="font-weight:bold; font-size:1.1em;">${labelName || tagName || 'New Tag'}</span>
+                        <span class="tag-title" style="font-weight:bold; font-size:1.1em;">${labelName || tagName || 'New'}</span>
                         <span class="tag-status" style="margin-left:10px; font-size:0.8em; opacity:0.7;">${sourceCount} ${sourceLabel}</span>
                         <span class="badge-container" style="display:flex; align-items:center;">${indicatorsHtml}</span>
                     </div>
@@ -500,14 +546,14 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             <div class="tag-body" style="${initialStyle} padding:15px; border-top:1px solid rgba(255,255,255,0.1);">
                 <div class="tag-tabs" style="display: flex; gap: 20px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <div class="tag-tab active" data-tab="general" style="padding: 8px 0; cursor: pointer; font-weight: bold; border-bottom: 2px solid #52B54B;">Source</div>
-                    <div class="tag-tab" data-tab="schedule" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Schedule</div>
+                    <div class="tag-tab" data-tab="tag" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Tag</div>
                     <div class="tag-tab" data-tab="collection" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Collection</div>
+                    <div class="tag-tab" data-tab="schedule" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Schedule</div>
                     <div class="tag-tab" data-tab="advanced" style="padding: 8px 0; cursor: pointer; opacity: 0.6; font-weight: bold; border-bottom: 2px solid transparent;">Blacklist</div>
                 </div>
                 
                 <div class="tab-content general-tab">
-                    <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtEntryLabel" type="text" label="Entry Label (Display Name)" value="${labelName}" /></div>
-                    <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
+                    <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtEntryLabel" type="text" label="Display Name" value="${labelName}" /></div>
                     
                     <div style="margin-bottom: 15px;">
                         <label class="selectLabel">Source Type</label>
@@ -532,26 +578,27 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     </div>
 
                     <div class="source-mediainfo-container" style="display: ${sourceType === 'MediaInfo' ? 'block' : 'none'};">
-                        <p style="margin:10px 0 5px 0; font-size:0.9em; font-weight:bold; opacity:0.7;">Select Media Requirements</p>
-                        <div class="media-info-grid">
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${chk("4K")} /><span>4K Resolution</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${chk("1080p")} /><span>Full HD (1080p)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${chk("720p")} /><span>HD (720p)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${chk("HEVC")} /><span>HEVC (H.265)</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${chk("AV1")} /><span>AV1 Codec</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${chk("HDR")} /><span>HDR</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${chk("DolbyVision")} /><span>Dolby Vision</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${chk("Atmos")} /><span>Dolby Atmos</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${chk("TrueHD")} /><span>Dolby TrueHD</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${chk("DTS")} /><span>DTS Audio</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${chk("5.1")} /><span>5.1 Channels</span></label>
-                            <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${chk("7.1")} /><span>7.1 Channels</span></label>
-                        </div>
+                        <div class="mediainfo-filter-list">${filterGroupsHtml}</div>
+                        <button type="button" is="emby-button" class="btnAddMediaInfoFilter raised" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary); margin-top:4px;"><i class="md-icon" style="margin-right:5px;">add</i>Add Filter</button>
                         <div style="width:110px; margin-top:15px;">
                             <input is="emby-input" class="txtMediaInfoLimit" type="number" label="Max (0=All)" value="${mediaInfoLimit}" min="0" />
                         </div>
                     </div>
                 </div>
+
+            <div class="tab-content tagname-tab" style="display:none;">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" class="chkEnableTag" ${enableTag} />
+                            <span>Apply Tag</span>
+                        </label>
+                        <div class="fieldDescription">Automatically tag matched items in Emby.</div>
+                    </div>
+                    <div class="tag-settings" style="margin-left: 20px; padding-left: 15px; border-left: 2px solid var(--line-color); margin-top: 10px; display: ${tagConfig.EnableTag !== false ? 'block' : 'none'};">
+                        <div class="inputContainer" style="flex-grow:1;"><input is="emby-input" class="txtTagName" type="text" label="Tag Name" value="${tagName}" /></div>
+                        <p style="margin:5px 0 0 0; font-size:0.9em; opacity:0.7;">The tag that will be applied to matched items in Emby.</p>
+                    </div>
+            </div>
 
                 <div class="tab-content schedule-tab" style="display:none;">
                     <p style="margin:0 0 15px 0; font-size:0.9em; opacity:0.8;">Define when this tag should be active. If empty, it's always active.</p>
@@ -629,15 +676,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     }
 
     function setupRowEvents(row) {
-        var markDirty = function () { row.dataset.dirty = 'true'; checkGlobalDirtyState(); };
-        ['input', 'change', 'keyup', 'paste'].forEach(function (evt) {
-            row.addEventListener(evt, function (e) {
-                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
-                    setTimeout(markDirty, 10);
-                }
-            }, true);
-        });
-
         function updateBadges(row) {
             var container = row.querySelector('.badge-container');
             if (!container) return;
@@ -661,6 +699,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 this.style.opacity = "1"; this.style.borderBottomColor = "#52B54B";
                 var target = this.getAttribute('data-tab');
                 row.querySelector('.general-tab').style.display = target === 'general' ? 'block' : 'none';
+                row.querySelector('.tagname-tab').style.display = target === 'tag' ? 'block' : 'none';
                 row.querySelector('.schedule-tab').style.display = target === 'schedule' ? 'block' : 'none';
                 row.querySelector('.collection-tab').style.display = target === 'collection' ? 'block' : 'none';
                 row.querySelector('.advanced-tab').style.display = target === 'advanced' ? 'block' : 'none';
@@ -684,6 +723,9 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             if (e.target.classList.contains('chkMediaInfo')) {
                 updateCount(row);
             }
+            if (e.target.classList.contains('rdoFilterOp')) {
+                updateCount(row);
+            }
             
             if (e.target.classList.contains('selDateType')) {
                 var dateRow = e.target.closest('.date-row');
@@ -691,6 +733,9 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 dateRow.querySelector('.inputs-specific').style.display = type === 'SpecificDate' ? 'flex' : 'none';
                 dateRow.querySelector('.inputs-annual').style.display = type === 'EveryYear' ? 'flex' : 'none';
                 dateRow.querySelector('.inputs-weekly').style.display = type === 'Weekly' ? 'flex' : 'none';
+            }
+            if (e.target.classList.contains('chkEnableTag')) {
+                row.querySelector('.tag-settings').style.display = e.target.checked ? 'block' : 'none';
             }
             if (e.target.classList.contains('chkEnableCollection')) {
                 var settingsDiv = row.querySelector('.collection-settings');
@@ -700,13 +745,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     row.querySelector('.chkOnlyCollection').checked = false;
                 }
                 updateBadges(row);
-            }
-        });
-
-        row.addEventListener('click', e => {
-            if (e.target.classList.contains('day-toggle')) {
-                e.target.classList.toggle('active');
-                markDirty();
             }
         });
 
@@ -730,45 +768,49 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         row.querySelector('.btnAddUrl').addEventListener('click', () => {
             row.querySelector('.url-list-container').insertAdjacentHTML('beforeend', getUrlRowHtml('', 0));
             updateCount(row);
-            markDirty();
         });
 
         row.querySelector('.btnAddLocal').addEventListener('click', () => {
             var st = row.querySelector('.selSourceType').value;
             row.querySelector('.local-list-container').insertAdjacentHTML('beforeend', getLocalRowHtml(st, "", 0));
             updateCount(row);
-            markDirty();
         });
 
         row.querySelector('.btnAddDate').addEventListener('click', () => {
             row.querySelector('.date-list-container').insertAdjacentHTML('beforeend', getDateRowHtml({ Type: 'SpecificDate' }));
             updateBadges(row);
-            markDirty();
+        });
+
+        row.querySelector('.btnAddMediaInfoFilter').addEventListener('click', () => {
+            var list = row.querySelector('.mediainfo-filter-list');
+            var idx = list.querySelectorAll('.mediainfo-filter-group').length;
+            list.insertAdjacentHTML('beforeend', getMediaInfoFilterGroupHtml({ Operator: 'AND', Criteria: [] }, idx));
         });
 
         row.addEventListener('click', e => {
             if (e.target.closest('.btnRemoveUrl')) {
                 e.target.closest('.url-row').remove();
                 updateCount(row);
-                markDirty();
             }
 
             if (e.target.closest('.btnRemoveLocal')) {
                 e.target.closest('.local-row').remove();
                 updateCount(row);
-                markDirty();
             }
 
             if (e.target.closest('.btnRemoveDate')) {
                 e.target.closest('.date-row').remove();
                 updateBadges(row);
-                markDirty();
+            }
+
+            if (e.target.closest('.btnRemoveFilterGroup')) {
+                e.target.closest('.mediainfo-filter-group').remove();
+                updateCount(row);
             }
 
             if (e.target.closest('.btnRemoveGroup')) {
                 if (confirm("Delete this tag group?")) {
                     row.remove();
-                    checkGlobalDirtyState();
                 }
             }
 
@@ -788,7 +830,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         function updateTagTitle() {
             var lbl = row.querySelector('.txtEntryLabel').value;
             var tag = row.querySelector('.txtTagName').value;
-            row.querySelector('.tag-title').textContent = lbl || tag || 'New Tag';
+            row.querySelector('.tag-title').textContent = lbl || tag || 'New';
         }
         row.querySelector('.txtEntryLabel').addEventListener('input', updateTagTitle);
         row.querySelector('.txtTagName').addEventListener('input', updateTagTitle);
@@ -832,7 +874,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             row.classList.add('just-moved');
             setTimeout(() => { row.classList.remove('just-moved'); }, 2000);
 
-            checkGlobalDirtyState();
+            setTimeout(checkFormState, 0);
         });
 
         row.querySelector('.btnChoosePoster').addEventListener('click', function () {
@@ -863,7 +905,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                         row.querySelector('.hiddenPosterPath').value = result.FilePath;
                         row.querySelector('.poster-filename').textContent = file.name;
                         row.querySelector('.poster-preview-container').style.display = 'block';
-                        checkGlobalDirtyState();
                     } else {
                         window.Dashboard.alert('Upload failed: ' + (result.Message || 'Unknown error'));
                         img.style.display = 'none';
@@ -882,7 +923,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             row.querySelector('.poster-preview-container').style.display = 'none';
             row.querySelector('.poster-preview-img').style.display = 'none';
             row.querySelector('.inputPosterFile').value = '';
-            checkGlobalDirtyState();
         });
     }
 
@@ -904,7 +944,9 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     }
 
     function refreshStatus(view) {
+        var myId = ++statusRequestId;
         window.ApiClient.getJSON(window.ApiClient.getUrl("AutoTag/Status")).then(result => {
+            if (myId !== statusRequestId) return;
             var label = view.querySelector('#lastRunStatusLabel'), dot = view.querySelector('#dotStatus'), content = view.querySelector('#logContent');
             var btnSave = view.querySelector('.btn-save'), btnRun = view.querySelector('#btnRunSync');
 
@@ -915,7 +957,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 if (btnRun) btnRun.disabled = false;
                 if (btnSave) {
                     btnSave.querySelector('span').textContent = "Save Settings";
-                    checkGlobalDirtyState();
+                    checkFormState();
                 }
             }
 
@@ -926,6 +968,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 if (result.LastRunStatus.includes("Running")) dot.classList.add("running");
                 else if (result.LastRunStatus.includes("Failed")) dot.classList.add("failed");
             }
+        }).catch(function () {
+            if (myId !== statusRequestId) return;
         });
     }
 
@@ -967,6 +1011,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var blInput = row.querySelector('.txtTagBlacklist');
             var bl = blInput ? blInput.value.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
 
+            var enableTagChk = row.querySelector('.chkEnableTag').checked;
             var enableColl = row.querySelector('.chkEnableCollection').checked;
             var onlyColl = row.querySelector('.chkOnlyCollection').checked;
             var collName = row.querySelector('.txtCollectionName').value;
@@ -994,35 +1039,44 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 intervals.push({ Type: type, Start: s || null, End: e || null, DayOfWeek: days });
             });
 
-            var currentLastMod = row.dataset.lastModified || new Date().toISOString();
-            if (forComparison) {
-                currentLastMod = "CONSTANT_FOR_COMPARISON";
-            } else if (row.dataset.dirty === 'true') {
-                currentLastMod = new Date().toISOString();
-            }
-
+            var currentLastMod = "CONSTANT_FOR_COMPARISON";
+            
             var st = row.querySelector('.selSourceType').value;
-            var mi = [];
-            row.querySelectorAll('.chkMediaInfo:checked').forEach(cb => mi.push(cb.value));
+            var miFilters = [];
+            row.querySelectorAll('.mediainfo-filter-group').forEach(function (group) {
+                var opInput = group.querySelector('.rdoFilterOp:checked');
+                var operator = opInput ? opInput.value : 'AND';
+                var criteria = [];
+                group.querySelectorAll('.chkMediaInfo:checked').forEach(function (cb) { criteria.push(cb.value); });
+                if (criteria.length > 0) miFilters.push({ Operator: operator, Criteria: criteria });
+            });
 
             var baseTag = {
                 Name: entryLabel, Tag: name, Active: active, Blacklist: bl, ActiveIntervals: intervals,
-                EnableCollection: enableColl, CollectionName: collName, CollectionDescription: collDescription, CollectionPosterPath: collPoster, OnlyCollection: onlyColl, LastModified: currentLastMod,
-                SourceType: st, MediaInfoConditions: mi
+                EnableTag: enableTagChk, EnableCollection: enableColl, CollectionName: collName, CollectionDescription: collDescription, CollectionPosterPath: collPoster, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                SourceType: st, MediaInfoFilters: miFilters, MediaInfoConditions: []
             };
 
             if (st === 'External') {
+                var pushedExternal = false;
                 row.querySelectorAll('.url-row').forEach(uRow => {
                     var urlVal = uRow.querySelector('.txtTagUrl').value.trim();
                     var limitVal = parseInt(uRow.querySelector('.txtUrlLimit').value, 10) || 0;
-                    if (urlVal) flatTags.push(Object.assign({}, baseTag, { Url: urlVal, Limit: limitVal, LocalSourceId: "" }));
+                    if (urlVal) { flatTags.push(Object.assign({}, baseTag, { Url: urlVal, Limit: limitVal, LocalSourceId: "" })); pushedExternal = true; }
                 });
+                if (forComparison && !pushedExternal) {
+                    flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: 0, LocalSourceId: "" }));
+                }
             } else if (st === 'LocalCollection' || st === 'LocalPlaylist') {
+                var pushedLocal = false;
                 row.querySelectorAll('.local-row').forEach(lRow => {
                     var localVal = lRow.querySelector('.selLocalSource').value;
                     var limitVal = parseInt(lRow.querySelector('.txtLocalLimit').value, 10) || 0;
-                    if (localVal) flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: limitVal, LocalSourceId: localVal }));
+                    if (localVal) { flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: limitVal, LocalSourceId: localVal })); pushedLocal = true; }
                 });
+                if (forComparison && !pushedLocal) {
+                    flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: 0, LocalSourceId: "" }));
+                }
             } else {
                 var miLimitVal = parseInt((row.querySelector('.txtMediaInfoLimit') || {}).value, 10) || 0;
                 flatTags.push(Object.assign({}, baseTag, { Url: "", Limit: miLimitVal, LocalSourceId: "" }));
@@ -1038,20 +1092,28 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         };
     }
 
-    function checkGlobalDirtyState() {
+    function checkFormState() {
         var view = document.querySelector('#AutoTagConfigPage');
         if (!view || !originalConfigState) return;
+        
+        var isDirty = false;
+        try {
+            var current = JSON.stringify(getUiConfig(view, true));
+            isDirty = current !== originalConfigState;
+        } catch (e) {
+            // If serialization fails, assume it's dirty to be safe.
+            isDirty = true;
+        }
 
-        var current = JSON.stringify(getUiConfig(view, true));
         var btnSave = view.querySelector('.btn-save');
-
         if (btnSave) {
-            if (current !== originalConfigState) {
-                btnSave.disabled = false;
-                btnSave.style.opacity = "1";
-            } else {
+            var isSyncRunning = (btnSave.querySelector('span').textContent || "").includes("progress");
+            if (isSyncRunning) {
                 btnSave.disabled = true;
                 btnSave.style.opacity = "0.5";
+            } else {
+                btnSave.disabled = !isDirty;
+                btnSave.style.opacity = isDirty ? "1" : "0.5";
             }
         }
     }
@@ -1062,8 +1124,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var warn = view.querySelector('.dry-run-warning');
         if (warn) {
             try {
-                var savedConfig = JSON.parse(originalConfigState);
-                warn.style.display = savedConfig.DryRunMode ? 'flex' : 'none';
+                var currentConfig = getUiConfig(view, true);
+                warn.style.display = currentConfig.DryRunMode ? 'flex' : 'none';
             } catch (e) {
                 warn.style.display = 'none';
             }
@@ -1137,12 +1199,14 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var grouped = {};
         (tags || []).forEach(t => {
             var key = t.Name ? t.Name + '\x1F' + t.Tag : t.Tag;
-            if (!grouped[key]) grouped[key] = {
-                Tag: t.Tag, Name: t.Name || '', Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
-                EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, CollectionDescription: t.CollectionDescription || '', CollectionPosterPath: t.CollectionPosterPath || '', OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
-                SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [],
-                Limit: t.Limit || 0
-            };
+            if (!grouped[key]) {
+                grouped[key] = {
+                    Tag: t.Tag, Name: t.Name || '', Urls: [], LocalSources: [], Active: t.Active, Blacklist: t.Blacklist, ActiveIntervals: t.ActiveIntervals,
+                    EnableTag: t.EnableTag !== false, EnableCollection: t.EnableCollection, CollectionName: t.CollectionName, CollectionDescription: t.CollectionDescription || '', CollectionPosterPath: t.CollectionPosterPath || '', OnlyCollection: t.OnlyCollection, LastModified: t.LastModified,
+                    SourceType: t.SourceType || "External", MediaInfoConditions: t.MediaInfoConditions || [], MediaInfoFilters: t.MediaInfoFilters || [],
+                    Limit: t.Limit || 0
+                };
+            }
             if (t.SourceType === 'External' && t.Url) grouped[key].Urls.push({ url: t.Url, limit: t.Limit });
             if ((t.SourceType === 'LocalCollection' || t.SourceType === 'LocalPlaylist') && t.LocalSourceId) grouped[key].LocalSources.push({ id: t.LocalSourceId, limit: t.Limit });
             if (t.SourceType === 'MediaInfo') grouped[key].Limit = t.Limit;
@@ -1156,6 +1220,22 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 document.body.insertAdjacentHTML('beforeend', customCss);
             }
 
+            var form = view.querySelector('.AutoTagForm');
+
+            // Centralized change detection using event delegation
+            var changeHandler = function() {
+                // Use a timeout to ensure the DOM has updated before we check the state.
+                setTimeout(checkFormState, 0);
+            };
+            form.addEventListener('input', changeHandler);
+            form.addEventListener('change', changeHandler);
+            form.addEventListener('click', (e) => {
+                // Also trigger on clicks that modify the structure, like adding/removing rows or toggling day buttons
+                 if (e.target.closest('.btnRemoveUrl, .btnAddUrl, .btnRemoveLocal, .btnAddLocal, .btnRemoveDate, .btnAddDate, .btnRemoveFilterGroup, .btnAddMediaInfoFilter, .btnRemoveGroup, .day-toggle, .btnRemovePoster')) {
+                    changeHandler();
+                }
+            });
+            
             var container = view.querySelector('#tagListContainer');
             if (container) {
                 let rafId = null;
@@ -1188,6 +1268,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     if (draggingRow && placeholder) {
                         container.insertBefore(draggingRow, placeholder);
                         placeholder.remove();
+                        changeHandler(); // Drag and drop is a change
                     }
                 });
             }
@@ -1196,9 +1277,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
             var btnSave = view.querySelector('.btn-save');
             if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; }
-
-            ['#txtTraktClientId', '#txtMdblistApiKey'].forEach(id => view.querySelector(id).addEventListener('input', checkGlobalDirtyState));
-            ['#chkExtendedConsoleOutput', '#chkDryRunMode'].forEach(id => view.querySelector(id).addEventListener('change', checkGlobalDirtyState));
+            
+            view.querySelector('#chkDryRunMode').addEventListener('change', updateDryRunWarning);
 
             checkForUpdates(view);
             refreshStatus(view);
@@ -1298,7 +1378,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             view.querySelector('#btnAddTag').addEventListener('click', () => {
                 renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, view.querySelector('#tagListContainer'), true, undefined, true);
                 applyFilters(view);
-                checkGlobalDirtyState();
             });
 
             Promise.all([
@@ -1325,13 +1404,14 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
                     var keys = Object.keys(grouped);
                     keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
+
                     if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, container, false, 0);
 
                     var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
                     sortRows(container, savedSort);
                     applyFilters(view);
                     originalConfigState = JSON.stringify(getUiConfig(view, true));
-                    checkGlobalDirtyState();
+                    checkFormState();
                     updateDryRunWarning();
                 });
             });
@@ -1371,7 +1451,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
                         originalConfigState = JSON.stringify(getUiConfig(view, true));
                         window.Dashboard.alert("Configuration loaded!");
-                        checkGlobalDirtyState();
+                        checkFormState();
                     } catch (err) { window.Dashboard.alert("Failed to parse configuration file."); }
                     fileInput.value = '';
                 };
@@ -1383,24 +1463,41 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         view.querySelector('.AutoTagForm').addEventListener('submit', e => {
             e.preventDefault();
+            
             var configObj = getUiConfig(view, false);
+            
+            var originalConf = JSON.parse(originalConfigState);
+            var originalTags = groupConfigTags(originalConf.Tags);
 
-            window.ApiClient.getPluginConfiguration(pluginId).then(config => {
-                config.TraktClientId = configObj.TraktClientId;
-                config.MdblistApiKey = configObj.MdblistApiKey;
-                config.ExtendedConsoleOutput = configObj.ExtendedConsoleOutput;
-                config.DryRunMode = configObj.DryRunMode;
-                config.Tags = configObj.Tags;
+            configObj.Tags.forEach(tag => {
+                var key = tag.Name ? tag.Name + '\x1F' + tag.Tag : tag.Tag;
+                var originalTag = originalTags[key];
+                
+                var currentTagForCompare = Object.assign({}, tag, { LastModified: "CONSTANT_FOR_COMPARISON" });
+                var originalTagForCompare = originalTag ? Object.assign({}, originalTag, { LastModified: "CONSTANT_FOR_COMPARISON" }) : null;
 
-                window.ApiClient.updatePluginConfiguration(pluginId, config).then(r => {
-                    window.Dashboard.processPluginConfigurationUpdateResult(r);
+                if (!originalTag || JSON.stringify(currentTagForCompare) !== JSON.stringify(originalTagForCompare)) {
+                    tag.LastModified = new Date().toISOString();
+                } else {
+                    tag.LastModified = originalTag.LastModified;
+                }
+            });
 
-                    view.querySelectorAll('.tag-row').forEach(row => { row.dataset.dirty = 'false'; });
-
-                    originalConfigState = JSON.stringify(getUiConfig(view, true));
-                    var btnSave = view.querySelector('.btn-save');
-                    if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; }
-                    updateDryRunWarning();
+            window.ApiClient.updatePluginConfiguration(pluginId, configObj).then(r => {
+                window.Dashboard.processPluginConfigurationUpdateResult(r);
+                originalConfigState = JSON.stringify(getUiConfig(view, true));
+                checkFormState();
+                updateDryRunWarning();
+                
+                // Update the UI with new timestamps
+                var newGrouped = groupConfigTags(configObj.Tags);
+                view.querySelectorAll('.tag-row').forEach(row => {
+                    var name = row.querySelector('.txtEntryLabel').value;
+                    var tagName = row.querySelector('.txtTagName').value;
+                    var key = name ? name + '\x1F' + tagName : tagName;
+                    if(newGrouped[key]) {
+                        row.dataset.lastModified = newGrouped[key].LastModified;
+                    }
                 });
             });
         });

@@ -25,10 +25,12 @@ namespace AutoTag
         public string LocalSourceId { get; set; } = "";
         public List<string> LocalSources { get; set; } = new List<string>();
         public List<string> MediaInfoConditions { get; set; } = new List<string>();
+        public List<MediaInfoFilter> MediaInfoFilters { get; set; } = new List<MediaInfoFilter>();
         
         public List<string> Blacklist { get; set; } = new List<string>();
         public List<DateInterval> ActiveIntervals { get; set; } = new List<DateInterval>();
 
+        public bool EnableTag { get; set; } = true;
         public bool EnableCollection { get; set; } = false;
         public string CollectionName { get; set; } = "";
         public string CollectionDescription { get; set; } = "";
@@ -36,6 +38,12 @@ namespace AutoTag
         public bool OnlyCollection { get; set; } = false;
 
         public DateTime LastModified { get; set; } = DateTime.MinValue;
+    }
+
+    public class MediaInfoFilter
+    {
+        public string Operator { get; set; } = "AND";
+        public List<string> Criteria { get; set; } = new List<string>();
     }
 
     public class DateInterval
