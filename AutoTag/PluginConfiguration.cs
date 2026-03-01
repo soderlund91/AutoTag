@@ -44,6 +44,7 @@ namespace AutoTag
     {
         public string Operator { get; set; } = "AND";
         public List<string> Criteria { get; set; } = new List<string>();
+        public string GroupOperator { get; set; } = "AND";
     }
 
     public class DateInterval

@@ -422,43 +422,167 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
-    var _fgCounter = 0;
-    function getMediaInfoFilterGroupHtml(filter, i) {
+    var _formAc = null;
+
+    var MI_CRITERION_MAP = {
+        '4K': { prop: 'Resolution', val: '4K' }, '8K': { prop: 'Resolution', val: '8K' },
+        '1080p': { prop: 'Resolution', val: '1080p' }, '720p': { prop: 'Resolution', val: '720p' },
+        'SD': { prop: 'Resolution', val: 'SD' },
+        'HEVC': { prop: 'VideoCodec', val: 'HEVC' }, 'AV1': { prop: 'VideoCodec', val: 'AV1' },
+        'H264': { prop: 'VideoCodec', val: 'H264' },
+        'HDR': { prop: 'HDR', val: 'HDR' }, 'DolbyVision': { prop: 'HDR', val: 'DolbyVision' },
+        'HDR10': { prop: 'HDR', val: 'HDR10' },
+        'Atmos': { prop: 'AudioFormat', val: 'Atmos' }, 'TrueHD': { prop: 'AudioFormat', val: 'TrueHD' },
+        'DtsHdMa': { prop: 'AudioFormat', val: 'DtsHdMa' }, 'DTS': { prop: 'AudioFormat', val: 'DTS' },
+        'AC3': { prop: 'AudioFormat', val: 'AC3' }, 'AAC': { prop: 'AudioFormat', val: 'AAC' },
+        '7.1': { prop: 'AudioChannels', val: '7.1' }, '5.1': { prop: 'AudioChannels', val: '5.1' },
+        'Stereo': { prop: 'AudioChannels', val: 'Stereo' }, 'Mono': { prop: 'AudioChannels', val: 'Mono' }
+    };
+    var MI_REVERSE_MAP = {};
+    Object.keys(MI_CRITERION_MAP).forEach(function (k) {
+        var m = MI_CRITERION_MAP[k];
+        MI_REVERSE_MAP[m.prop + ':' + m.val] = k;
+    });
+
+    function parseCriterion(crit) {
+        if (!crit) return { prop: 'Resolution', op: '', val: '' };
+        var parts = crit.split(':');
+        if (parts.length === 1) {
+            var mapped = MI_CRITERION_MAP[crit];
+            return mapped ? { prop: mapped.prop, op: '', val: mapped.val } : { prop: '', op: '', val: crit };
+        }
+        if (parts.length === 2) return { prop: parts[0], op: '', val: parts[1] };
+        if (parts.length === 3) return { prop: parts[0], op: parts[1], val: parts[2] };
+        return { prop: 'Resolution', op: '', val: '' };
+    }
+
+    function buildCriterion(prop, op, val) {
+        if (!prop || val === '') return '';
+        if (op) return prop + ':' + op + ':' + val;
+        var key = prop + ':' + val;
+        return MI_REVERSE_MAP[key] || (prop + ':' + val);
+    }
+
+    var MI_DROPDOWN_OPTIONS = {
+        Resolution: [['8K', '8K (7680p+)'], ['4K', '4K / UHD'], ['1080p', '1080p / FHD'], ['720p', '720p / HD'], ['SD', 'SD (<720p)']],
+        VideoCodec: [['HEVC', 'HEVC / H.265'], ['AV1', 'AV1'], ['H264', 'H.264 / AVC']],
+        HDR:        [['HDR', 'HDR (any)'], ['DolbyVision', 'Dolby Vision'], ['HDR10', 'HDR10']],
+        AudioFormat: [['Atmos', 'Dolby Atmos'], ['TrueHD', 'Dolby TrueHD'], ['DtsHdMa', 'DTS-HD MA'], ['DTS', 'DTS'], ['AC3', 'Dolby Digital / AC3'], ['AAC', 'AAC']],
+        AudioChannels: [['7.1', '7.1+ Surround'], ['5.1', '5.1 Surround'], ['Stereo', 'Stereo'], ['Mono', 'Mono']]
+    };
+    var MI_NUMERIC_PROPS = ['CommunityRating', 'Year', 'Runtime'];
+    var MI_TEXT_PLACEHOLDERS = {
+        Title: 'e.g. Batman', Studio: 'e.g. Warner', Genre: 'e.g. Action',
+        Actor: 'e.g. Tom Hanks', Director: 'e.g. Nolan', Writer: 'e.g. Tarantino',
+        ContentRating: 'e.g. PG-13'
+    };
+
+    function propertyOptionsHtml(selected) {
+        var groups = [
+            { label: 'Video', props: [['Resolution','Resolution'], ['VideoCodec','Video Codec'], ['HDR','HDR']] },
+            { label: 'Audio', props: [['AudioFormat','Audio Format'], ['AudioChannels','Audio Channels'], ['AudioLanguage','Audio Language']] },
+            { label: 'Content', props: [['Title','Title'], ['Studio','Studio'], ['Genre','Genre'], ['Actor','Actor / Cast'], ['Director','Director'], ['Writer','Writer'], ['ContentRating','Content Rating']] },
+            { label: 'Metrics', props: [['CommunityRating','Community Rating'], ['Year','Year'], ['Runtime','Runtime (min)']] }
+        ];
+        return groups.map(function (g) {
+            return '<optgroup label="' + g.label + '">' +
+                g.props.map(function (p) {
+                    return '<option value="' + p[0] + '"' + (p[0] === selected ? ' selected' : '') + '>' + p[1] + '</option>';
+                }).join('') +
+                '</optgroup>';
+        }).join('');
+    }
+
+    function getMiValueHtml(prop, savedOp, savedVal) {
+        if (MI_DROPDOWN_OPTIONS[prop]) {
+            var opts = MI_DROPDOWN_OPTIONS[prop].map(function (pair) {
+                return '<option value="' + pair[0] + '"' + (pair[0] === savedVal ? ' selected' : '') + '>' + pair[1] + '</option>';
+            }).join('');
+            return '<select class="selMiValue" is="emby-select" style="flex:1;">' + opts + '</select>';
+        }
+        if (MI_NUMERIC_PROPS.indexOf(prop) >= 0) {
+            var ops = ['=', '>', '>=', '<', '<='];
+            var opOpts = ops.map(function (o) {
+                return '<option value="' + o + '"' + (o === (savedOp || '>=') ? ' selected' : '') + '>' + o + '</option>';
+            }).join('');
+            return '<select class="selMiOp" is="emby-select" style="flex:0 0 64px;">' + opOpts + '</select>' +
+                '<input class="txtMiNum" is="emby-input" type="number" step="0.01" value="' + (savedVal || '') + '" style="flex:1;" />';
+        }
+        var ph = MI_TEXT_PLACEHOLDERS[prop] || '';
+        return '<input class="txtMiValue" is="emby-input" type="text" placeholder="' + ph + '" value="' + (savedVal || '').replace(/"/g, '&quot;') + '" style="flex:1;" />';
+    }
+
+    function getMediaInfoRuleHtml(criterion) {
+        var parsed = parseCriterion(criterion || '');
+        var prop = parsed.prop || 'Resolution';
+        return '<div class="mi-rule" style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">' +
+            '<select class="selMiProperty" is="emby-select" style="flex:0 0 155px;">' + propertyOptionsHtml(prop) + '</select>' +
+            '<div class="mi-value-wrapper" style="flex:1; display:flex; gap:6px; align-items:center;">' + getMiValueHtml(prop, parsed.op, parsed.val) + '</div>' +
+            '<button type="button" class="btnRemoveMiRule" style="background:transparent; border:none; color:#cc3333; cursor:pointer; padding:2px 8px; font-size:1em; flex-shrink:0;" title="Remove rule">✕</button>' +
+            '</div>';
+    }
+
+    function getMediaInfoFilterGroupHtml(filter, _i, isFirst) {
         var op = (filter && filter.Operator) || 'AND';
+        var groupOp = (filter && filter.GroupOperator) || 'AND';
         var criteria = (filter && filter.Criteria) || [];
-        var chkF = v => criteria.includes(v) ? 'checked' : '';
-        var gid = 'fg_' + (++_fgCounter) + '_' + i;
-        return `
-        <div class="mediainfo-filter-group" style="border:1px solid rgba(128,128,128,0.3); border-radius:6px; padding:12px; margin-bottom:10px; background:rgba(128,128,128,0.03);">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                    <span style="font-size:0.8em; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; opacity:0.6;">Match:</span>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
-                        <input type="radio" class="rdoFilterOp" name="${gid}" value="AND" ${op === 'AND' ? 'checked' : ''} />
-                        <span style="font-size:0.85em;">All of (AND)</span>
-                    </label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
-                        <input type="radio" class="rdoFilterOp" name="${gid}" value="OR" ${op === 'OR' ? 'checked' : ''} />
-                        <span style="font-size:0.85em;">Any of (OR)</span>
-                    </label>
-                </div>
-                <button type="button" class="btnRemoveFilterGroup" style="background:transparent; border:none; color:#cc3333; cursor:pointer; padding:2px 8px; font-size:0.85em; flex-shrink:0;">✕ Remove</button>
-            </div>
-            <div class="media-info-grid">
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="4K" ${chkF("4K")} /><span>4K Resolution</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="1080p" ${chkF("1080p")} /><span>Full HD (1080p)</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="720p" ${chkF("720p")} /><span>HD (720p)</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HEVC" ${chkF("HEVC")} /><span>HEVC (H.265)</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="AV1" ${chkF("AV1")} /><span>AV1 Codec</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="HDR" ${chkF("HDR")} /><span>HDR</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DolbyVision" ${chkF("DolbyVision")} /><span>Dolby Vision</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="Atmos" ${chkF("Atmos")} /><span>Dolby Atmos</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="TrueHD" ${chkF("TrueHD")} /><span>Dolby TrueHD</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="DTS" ${chkF("DTS")} /><span>DTS Audio</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="5.1" ${chkF("5.1")} /><span>5.1 Channels</span></label>
-                <label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" class="chkMediaInfo" value="7.1" ${chkF("7.1")} /><span>7.1 Channels</span></label>
-            </div>
-        </div>`;
+
+        var connectorHtml = isFirst ? '' :
+            '<div class="mi-group-connector" style="display:flex; align-items:center; gap:10px; margin:-12px -12px 14px; padding:8px 14px; background:rgba(0,0,0,0.12);">' +
+                '<div style="flex:1; height:1px; background:rgba(128,128,128,0.25);"></div>' +
+                '<div style="display:flex; flex-direction:column; align-items:center; gap:4px;">' +
+                    '<span style="font-size:0.7em; text-transform:uppercase; letter-spacing:1px; opacity:0.45;">Connect groups with</span>' +
+                    '<div style="display:flex; border-radius:14px; overflow:hidden; border:1px solid rgba(128,128,128,0.4);">' +
+                        '<button type="button" class="btnGroupOpChoice" data-value="AND"' +
+                        ' style="border:none; padding:4px 16px; font-size:0.82em; font-weight:bold; cursor:pointer; letter-spacing:0.5px;' +
+                        ' background:' + (groupOp === 'AND' ? 'rgba(0,164,220,0.75)' : 'transparent') + ';' +
+                        ' color:' + (groupOp === 'AND' ? '#fff' : 'inherit') + ';"' +
+                        ' title="Both filter groups must match">AND</button>' +
+                        '<div style="width:1px; background:rgba(128,128,128,0.4);"></div>' +
+                        '<button type="button" class="btnGroupOpChoice" data-value="OR"' +
+                        ' style="border:none; padding:4px 16px; font-size:0.82em; font-weight:bold; cursor:pointer; letter-spacing:0.5px;' +
+                        ' background:' + (groupOp === 'OR' ? 'rgba(220,120,0,0.75)' : 'transparent') + ';' +
+                        ' color:' + (groupOp === 'OR' ? '#fff' : 'inherit') + ';"' +
+                        ' title="Either filter group is enough">OR</button>' +
+                    '</div>' +
+                    '<span class="group-op-desc" style="font-size:0.7em; opacity:0.55; white-space:nowrap;">' +
+                        (groupOp === 'AND' ? 'Both groups must match' : 'Either group is enough') +
+                    '</span>' +
+                '</div>' +
+                '<div style="flex:1; height:1px; background:rgba(128,128,128,0.25);"></div>' +
+            '</div>';
+
+        var rulesHtml = criteria.map(function (c) { return getMediaInfoRuleHtml(c); }).join('');
+
+        return '<div class="mediainfo-filter-group" data-group-op="' + groupOp + '" data-op="' + op + '" style="border:1px solid rgba(128,128,128,0.3); border-radius:6px; padding:12px; margin-bottom:10px; background:rgba(128,128,128,0.03);">' +
+            connectorHtml +
+            '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">' +
+                '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
+                    '<span style="font-size:0.8em; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; opacity:0.6;">Match rules:</span>' +
+                    '<div style="display:flex; flex-direction:column; gap:3px;">' +
+                        '<div style="display:flex; border-radius:14px; overflow:hidden; border:1px solid rgba(128,128,128,0.4);">' +
+                            '<button type="button" class="btnGroupInnerOpChoice" data-value="AND"' +
+                            ' style="border:none; padding:4px 16px; font-size:0.82em; font-weight:bold; cursor:pointer; letter-spacing:0.5px;' +
+                            ' background:' + (op === 'AND' ? 'rgba(0,164,220,0.75)' : 'transparent') + ';' +
+                            ' color:' + (op === 'AND' ? '#fff' : 'inherit') + ';"' +
+                            ' title="All rules in this group must match">ALL</button>' +
+                            '<div style="width:1px; background:rgba(128,128,128,0.4);"></div>' +
+                            '<button type="button" class="btnGroupInnerOpChoice" data-value="OR"' +
+                            ' style="border:none; padding:4px 16px; font-size:0.82em; font-weight:bold; cursor:pointer; letter-spacing:0.5px;' +
+                            ' background:' + (op === 'OR' ? 'rgba(220,120,0,0.75)' : 'transparent') + ';' +
+                            ' color:' + (op === 'OR' ? '#fff' : 'inherit') + ';"' +
+                            ' title="Any rule in this group is enough">ANY</button>' +
+                        '</div>' +
+                        '<span class="inner-op-desc" style="font-size:0.7em; opacity:0.55;">' +
+                            (op === 'AND' ? 'All rules must match' : 'Any rule is enough') +
+                        '</span>' +
+                    '</div>' +
+                '</div>' +
+                '<button type="button" class="btnRemoveFilterGroup" style="background:transparent; border:none; color:#cc3333; cursor:pointer; padding:2px 8px; font-size:0.85em; flex-shrink:0;">✕ Remove</button>' +
+            '</div>' +
+            '<div class="mi-rules-list">' + rulesHtml + '</div>' +
+            '<button type="button" is="emby-button" class="btnAddMiRule raised btn-neutral" style="margin-top: 4px;">+ Add Rule</button>' +
+            '</div>';
     }
 
     function renderTagGroup(tagConfig, container, prepend, index, isNew) {
@@ -474,7 +598,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         var enableTag = tagConfig.EnableTag !== false ? 'checked' : '';
         var enableColl = tagConfig.EnableCollection ? 'checked' : '';
-        var onlyColl = tagConfig.OnlyCollection ? 'checked' : '';
+
         var collName = tagConfig.CollectionName || '';
         var collDescription = tagConfig.CollectionDescription || '';
         var collPosterPath = tagConfig.CollectionPosterPath || '';
@@ -485,13 +609,12 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
         var mediaInfoLimit = tagConfig.Limit || 0;
 
-        // Migrate legacy flat conditions to a single AND group if new format not present
         var mediaFilters = (tagConfig.MediaInfoFilters && tagConfig.MediaInfoFilters.length > 0)
             ? tagConfig.MediaInfoFilters
             : ((tagConfig.MediaInfoConditions && tagConfig.MediaInfoConditions.length > 0)
                 ? [{ Operator: 'AND', Criteria: tagConfig.MediaInfoConditions }]
                 : []);
-        var filterGroupsHtml = mediaFilters.map((f, i) => getMediaInfoFilterGroupHtml(f, i)).join('');
+        var filterGroupsHtml = mediaFilters.map((f, i) => getMediaInfoFilterGroupHtml(f, i, i === 0)).join('');
 
         var activeText = tagConfig.Active !== false ? "Active" : "Disabled";
         var activeColor = tagConfig.Active !== false ? "#52B54B" : "var(--theme-text-secondary)";
@@ -511,7 +634,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         } else if (sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') {
             sourceCount = localSources.length;
         } else if (sourceType === 'MediaInfo') {
-            sourceCount = mediaInfo.length;
+            sourceCount = mediaFilters.length;
             sourceLabel = "FILTER(S)";
         }
 
@@ -561,7 +684,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                             <option value="External" ${sourceType === 'External' ? 'selected' : ''}>External List (Trakt/MDBList)</option>
                             <option value="LocalCollection" ${sourceType === 'LocalCollection' ? 'selected' : ''}>Local Collection</option>
                             <option value="LocalPlaylist" ${sourceType === 'LocalPlaylist' ? 'selected' : ''}>Local Playlist</option>
-                            <option value="MediaInfo" ${sourceType === 'MediaInfo' ? 'selected' : ''}>Media Information</option>
+                            <option value="MediaInfo" ${sourceType === 'MediaInfo' ? 'selected' : ''}>Local Media Information</option>
                         </select>
                     </div>
 
@@ -621,13 +744,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                             <div class="fieldDescription">Leave empty to use Tag Name.</div>
                         </div>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top: 15px;">
-                            <label>
-                                <input is="emby-checkbox" type="checkbox" class="chkOnlyCollection" ${onlyColl} />
-                                <span>Only Collection (Disable Item Tagging)</span>
-                            </label>
-                            <div class="fieldDescription">If checked, items will be added to the collection but NOT tagged with "${tagName}".</div>
-                        </div>
 
                         <div class="inputContainer" style="margin-top:15px;">
                             <textarea is="emby-textarea" class="txtCollectionDescription" rows="3"
@@ -713,6 +829,13 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 row.querySelector('.source-local-container').style.display = (type === 'LocalCollection' || type === 'LocalPlaylist') ? 'block' : 'none';
                 row.querySelector('.source-mediainfo-container').style.display = type === 'MediaInfo' ? 'block' : 'none';
 
+                if (type === 'MediaInfo') {
+                    var miList = row.querySelector('.mediainfo-filter-list');
+                    if (miList && miList.querySelectorAll('.mediainfo-filter-group').length === 0) {
+                        miList.insertAdjacentHTML('beforeend', getMediaInfoFilterGroupHtml({ Operator: 'AND', Criteria: [], GroupOperator: 'AND' }, 0, true));
+                    }
+                }
+
                 if (type === 'LocalCollection' || type === 'LocalPlaylist') {
                     row.querySelector('.local-list-container').innerHTML = getLocalRowHtml(type, "", 0);
                     row.querySelector('.local-type-label').textContent = type === 'LocalPlaylist' ? "Select Playlists" : "Select Collections";
@@ -720,13 +843,10 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 updateCount(row);
             }
             
-            if (e.target.classList.contains('chkMediaInfo')) {
-                updateCount(row);
+            if (e.target.classList.contains('selMiProperty')) {
+                var wrapper = e.target.closest('.mi-rule').querySelector('.mi-value-wrapper');
+                wrapper.innerHTML = getMiValueHtml(e.target.value, '', '');
             }
-            if (e.target.classList.contains('rdoFilterOp')) {
-                updateCount(row);
-            }
-            
             if (e.target.classList.contains('selDateType')) {
                 var dateRow = e.target.closest('.date-row');
                 var type = e.target.value;
@@ -741,9 +861,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 var settingsDiv = row.querySelector('.collection-settings');
                 settingsDiv.style.display = e.target.checked ? 'block' : 'none';
 
-                if (!e.target.checked) {
-                    row.querySelector('.chkOnlyCollection').checked = false;
-                }
+
                 updateBadges(row);
             }
         });
@@ -781,12 +899,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             updateBadges(row);
         });
 
-        row.querySelector('.btnAddMediaInfoFilter').addEventListener('click', () => {
-            var list = row.querySelector('.mediainfo-filter-list');
-            var idx = list.querySelectorAll('.mediainfo-filter-group').length;
-            list.insertAdjacentHTML('beforeend', getMediaInfoFilterGroupHtml({ Operator: 'AND', Criteria: [] }, idx));
-        });
-
         row.addEventListener('click', e => {
             if (e.target.closest('.btnRemoveUrl')) {
                 e.target.closest('.url-row').remove();
@@ -803,8 +915,63 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 updateBadges(row);
             }
 
+            if (e.target.closest('.btnAddMediaInfoFilter')) {
+                var list = row.querySelector('.mediainfo-filter-list');
+                var idx = list.querySelectorAll('.mediainfo-filter-group').length;
+                list.insertAdjacentHTML('beforeend', getMediaInfoFilterGroupHtml({ Operator: 'AND', Criteria: [], GroupOperator: 'AND' }, idx, false));
+                updateCount(row);
+            }
+
             if (e.target.closest('.btnRemoveFilterGroup')) {
                 e.target.closest('.mediainfo-filter-group').remove();
+                var miList = row.querySelector('.mediainfo-filter-list');
+                var firstGroup = miList && miList.querySelector('.mediainfo-filter-group');
+                if (firstGroup) { var conn = firstGroup.querySelector('.mi-group-connector'); if (conn) conn.remove(); }
+                updateCount(row);
+            }
+
+            if (e.target.closest('.btnGroupOpChoice')) {
+                var btn = e.target.closest('.btnGroupOpChoice');
+                var newOp = btn.dataset.value;
+                var group = btn.closest('.mediainfo-filter-group');
+                group.dataset.groupOp = newOp;
+                group.querySelectorAll('.btnGroupOpChoice').forEach(function(b) {
+                    var active = b.dataset.value === newOp;
+                    b.style.background = active
+                        ? (newOp === 'AND' ? 'rgba(0,164,220,0.75)' : 'rgba(220,120,0,0.75)')
+                        : 'transparent';
+                    b.style.color = active ? '#fff' : '';
+                });
+                var desc = group.querySelector('.group-op-desc');
+                if (desc) desc.textContent = newOp === 'AND' ? 'Both groups must match' : 'Either group is enough';
+                setTimeout(checkFormState, 0);
+            }
+
+            if (e.target.closest('.btnGroupInnerOpChoice')) {
+                var btn = e.target.closest('.btnGroupInnerOpChoice');
+                var newOp = btn.dataset.value;
+                var group = btn.closest('.mediainfo-filter-group');
+                group.dataset.op = newOp;
+                group.querySelectorAll('.btnGroupInnerOpChoice').forEach(function(b) {
+                    var active = b.dataset.value === newOp;
+                    b.style.background = active
+                        ? (newOp === 'AND' ? 'rgba(0,164,220,0.75)' : 'rgba(220,120,0,0.75)')
+                        : 'transparent';
+                    b.style.color = active ? '#fff' : '';
+                });
+                var desc = group.querySelector('.inner-op-desc');
+                if (desc) desc.textContent = newOp === 'AND' ? 'All rules must match' : 'Any rule is enough';
+                setTimeout(checkFormState, 0);
+            }
+
+            if (e.target.closest('.btnAddMiRule')) {
+                var rulesList = e.target.closest('.mediainfo-filter-group').querySelector('.mi-rules-list');
+                rulesList.insertAdjacentHTML('beforeend', getMediaInfoRuleHtml(''));
+                updateCount(row);
+            }
+
+            if (e.target.closest('.btnRemoveMiRule')) {
+                e.target.closest('.mi-rule').remove();
                 updateCount(row);
             }
 
@@ -936,8 +1103,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         } else if (sourceType === 'LocalCollection' || sourceType === 'LocalPlaylist') {
             count = row.querySelectorAll('.local-row').length;
         } else if (sourceType === 'MediaInfo') {
-            count = row.querySelectorAll('.chkMediaInfo:checked').length;
-            label = "FILTER(S)";
+            count = row.querySelectorAll('.mi-rule').length;
+            label = "RULE(S)";
         }
         
         row.querySelector('.tag-status').textContent = count + " " + label;
@@ -1004,8 +1171,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     function getUiConfig(view, forComparison) {
         var flatTags = [];
         view.querySelectorAll('.tag-row').forEach(row => {
-            var name = row.querySelector('.txtTagName').value;
             var entryLabel = row.querySelector('.txtEntryLabel').value;
+            var name = row.querySelector('.txtTagName').value || entryLabel;
             var active = row.querySelector('.chkTagActive').checked;
 
             var blInput = row.querySelector('.txtTagBlacklist');
@@ -1013,7 +1180,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
             var enableTagChk = row.querySelector('.chkEnableTag').checked;
             var enableColl = row.querySelector('.chkEnableCollection').checked;
-            var onlyColl = row.querySelector('.chkOnlyCollection').checked;
+
             var collName = row.querySelector('.txtCollectionName').value;
             var collDescription = row.querySelector('.txtCollectionDescription') ? row.querySelector('.txtCollectionDescription').value : '';
             var collPoster = row.querySelector('.hiddenPosterPath') ? row.querySelector('.hiddenPosterPath').value : '';
@@ -1039,21 +1206,33 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                 intervals.push({ Type: type, Start: s || null, End: e || null, DayOfWeek: days });
             });
 
-            var currentLastMod = "CONSTANT_FOR_COMPARISON";
+            var currentLastMod = row.dataset.lastModified || new Date().toISOString();
             
             var st = row.querySelector('.selSourceType').value;
             var miFilters = [];
-            row.querySelectorAll('.mediainfo-filter-group').forEach(function (group) {
-                var opInput = group.querySelector('.rdoFilterOp:checked');
-                var operator = opInput ? opInput.value : 'AND';
+            row.querySelectorAll('.mediainfo-filter-group').forEach(function (group, gi) {
+                var operator = group.dataset.op || 'AND';
+                var groupOp = gi === 0 ? 'AND' : (group.dataset.groupOp || 'AND');
                 var criteria = [];
-                group.querySelectorAll('.chkMediaInfo:checked').forEach(function (cb) { criteria.push(cb.value); });
-                if (criteria.length > 0) miFilters.push({ Operator: operator, Criteria: criteria });
+                group.querySelectorAll('.mi-rule').forEach(function (rule) {
+                    var prop = (rule.querySelector('.selMiProperty') || {}).value || '';
+                    var selVal = rule.querySelector('.selMiValue');
+                    var txtVal = rule.querySelector('.txtMiValue');
+                    var selOp  = rule.querySelector('.selMiOp');
+                    var txtNum = rule.querySelector('.txtMiNum');
+                    var val = selVal ? selVal.value : (txtVal ? txtVal.value.trim() : '');
+                    var op2 = selOp ? selOp.value : '';
+                    var num = txtNum ? txtNum.value.trim() : '';
+                    var finalVal = op2 ? num : val;
+                    var crit = buildCriterion(prop, op2, finalVal);
+                    if (crit) criteria.push(crit);
+                });
+                if (criteria.length > 0) miFilters.push({ Operator: operator, Criteria: criteria, GroupOperator: groupOp });
             });
 
             var baseTag = {
                 Name: entryLabel, Tag: name, Active: active, Blacklist: bl, ActiveIntervals: intervals,
-                EnableTag: enableTagChk, EnableCollection: enableColl, CollectionName: collName, CollectionDescription: collDescription, CollectionPosterPath: collPoster, OnlyCollection: onlyColl, LastModified: currentLastMod,
+                EnableTag: enableTagChk, EnableCollection: enableColl, CollectionName: collName, CollectionDescription: collDescription, CollectionPosterPath: collPoster, OnlyCollection: false, LastModified: currentLastMod,
                 SourceType: st, MediaInfoFilters: miFilters, MediaInfoConditions: []
             };
 
@@ -1101,7 +1280,6 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             var current = JSON.stringify(getUiConfig(view, true));
             isDirty = current !== originalConfigState;
         } catch (e) {
-            // If serialization fails, assume it's dirty to be safe.
             isDirty = true;
         }
 
@@ -1124,8 +1302,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var warn = view.querySelector('.dry-run-warning');
         if (warn) {
             try {
-                var currentConfig = getUiConfig(view, true);
-                warn.style.display = currentConfig.DryRunMode ? 'flex' : 'none';
+                var savedConfig = JSON.parse(originalConfigState);
+                warn.style.display = savedConfig.DryRunMode ? 'flex' : 'none';
             } catch (e) {
                 warn.style.display = 'none';
             }
@@ -1221,164 +1399,223 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             }
 
             var form = view.querySelector('.AutoTagForm');
+            var isFirstVisit = !view.dataset.autotagInit;
+            if (isFirstVisit) view.dataset.autotagInit = '1';
 
-            // Centralized change detection using event delegation
+            originalConfigState = null;
+
             var changeHandler = function() {
-                // Use a timeout to ensure the DOM has updated before we check the state.
                 setTimeout(checkFormState, 0);
             };
-            form.addEventListener('input', changeHandler);
-            form.addEventListener('change', changeHandler);
+            if (_formAc) _formAc.abort();
+            _formAc = new AbortController();
+            var _signal = _formAc.signal;
+            form.addEventListener('input', changeHandler, { signal: _signal });
+            form.addEventListener('change', changeHandler, { signal: _signal });
             form.addEventListener('click', (e) => {
-                // Also trigger on clicks that modify the structure, like adding/removing rows or toggling day buttons
-                 if (e.target.closest('.btnRemoveUrl, .btnAddUrl, .btnRemoveLocal, .btnAddLocal, .btnRemoveDate, .btnAddDate, .btnRemoveFilterGroup, .btnAddMediaInfoFilter, .btnRemoveGroup, .day-toggle, .btnRemovePoster')) {
+                if (e.target.closest('.btnRemoveUrl, .btnAddUrl, .btnRemoveLocal, .btnAddLocal, .btnRemoveDate, .btnAddDate, .btnRemoveFilterGroup, .btnAddMediaInfoFilter, .btnGroupOpChoice, .btnGroupInnerOpChoice, .btnAddMiRule, .btnRemoveMiRule, .btnRemoveGroup, .day-toggle, .btnRemovePoster')) {
                     changeHandler();
                 }
-            });
+            }, { signal: _signal });
             
             var container = view.querySelector('#tagListContainer');
-            if (container) {
-                let rafId = null;
-                container.addEventListener('dragover', (e) => {
-                    if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
-                    e.preventDefault();
-                    if (rafId) return;
-                    rafId = requestAnimationFrame(() => {
+
+            if (isFirstVisit) {
+                if (container) {
+                    let rafId = null;
+                    container.addEventListener('dragover', (e) => {
+                        if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
+                        e.preventDefault();
+                        if (rafId) return;
+                        rafId = requestAnimationFrame(() => {
+                            const draggingRow = document.querySelector('.tag-row.dragging');
+                            if (!draggingRow) { rafId = null; return; }
+                            const afterElement = getDragAfterElement(container, e.clientY);
+                            var placeholder = document.querySelector('.sort-placeholder');
+                            if (!placeholder) {
+                                placeholder = document.createElement('div');
+                                placeholder.className = 'sort-placeholder';
+                            }
+                            if (afterElement == null) {
+                                if (placeholder.nextElementSibling !== null) container.appendChild(placeholder);
+                            } else {
+                                if (placeholder.nextElementSibling !== afterElement) container.insertBefore(placeholder, afterElement);
+                            }
+                            rafId = null;
+                        });
+                    });
+                    container.addEventListener('drop', (e) => {
+                        if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
+                        e.preventDefault();
                         const draggingRow = document.querySelector('.tag-row.dragging');
-                        if (!draggingRow) { rafId = null; return; }
-                        const afterElement = getDragAfterElement(container, e.clientY);
-                        var placeholder = document.querySelector('.sort-placeholder');
-                        if (!placeholder) {
-                            placeholder = document.createElement('div');
-                            placeholder.className = 'sort-placeholder';
+                        const placeholder = document.querySelector('.sort-placeholder');
+                        if (draggingRow && placeholder) {
+                            container.insertBefore(draggingRow, placeholder);
+                            placeholder.remove();
+                            changeHandler();
                         }
-                        if (afterElement == null) {
-                            if (placeholder.nextElementSibling !== null) container.appendChild(placeholder);
-                        } else {
-                            if (placeholder.nextElementSibling !== afterElement) container.insertBefore(placeholder, afterElement);
-                        }
-                        rafId = null;
+                    });
+                }
+
+
+
+                var logOverlay = view.querySelector('#logModalOverlay');
+                var helpOverlay = view.querySelector('#helpModalOverlay');
+
+                view.querySelector('#btnOpenLogs').addEventListener('click', e => { e.preventDefault(); logOverlay.classList.add('modal-visible'); });
+                view.querySelector('#btnCloseLogs').addEventListener('click', () => logOverlay.classList.remove('modal-visible'));
+                logOverlay.addEventListener('click', e => { if (e.target === logOverlay) logOverlay.classList.remove('modal-visible'); });
+
+                view.querySelector('#btnOpenHelp').addEventListener('click', () => helpOverlay.classList.add('modal-visible'));
+                view.querySelector('#btnCloseHelp').addEventListener('click', () => helpOverlay.classList.remove('modal-visible'));
+                helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('modal-visible'); });
+
+                var globalSettingsHeader = view.querySelector('#globalSettings .advanced-header');
+                if (globalSettingsHeader) {
+                    globalSettingsHeader.addEventListener('click', function () {
+                        var body = view.querySelector('#globalSettings .advanced-body');
+                        var icon = view.querySelector('#globalSettings .expand-icon');
+                        var isHidden = body.style.display === 'none';
+                        body.style.display = isHidden ? 'block' : 'none';
+                        icon.innerText = isHidden ? 'expand_less' : 'expand_more';
+                    });
+                }
+
+                var headerAction = view.querySelector('.sectionTitleContainer');
+                if (headerAction && !view.querySelector('#cbSortTags')) {
+                    var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
+                    headerAction.style.display = "flex";
+                    headerAction.style.alignItems = "center";
+                    headerAction.style.justifyContent = "space-between";
+                    headerAction.style.width = "100%";
+                    headerAction.style.marginBottom = "10px";
+
+                    var controlRowHtml = `
+                    <div class="control-row" style="flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; justify-content: flex-start !important; padding: 10px 15px !important; gap: 0 !important;">
+
+                        <span class="control-label" style="opacity:0.7; margin-right: 10px; flex-shrink: 0;">Sort:</span>
+
+                        <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(128,128,128,0.08); border:1px solid var(--line-color); padding:5px; border-radius:4px; font-size:0.9em; cursor:pointer; width: 80px; margin-right: 0px;">
+                            <option value="Manual" ${savedSort === 'Manual' ? 'selected' : ''}>Manual</option>
+                            <option value="Name" ${savedSort === 'Name' ? 'selected' : ''}>Name</option>
+                            <option value="Active" ${savedSort === 'Active' ? 'selected' : ''}>Status</option>
+                            <option value="LatestEdited" ${savedSort === 'LatestEdited' ? 'selected' : ''}>Latest</option>
+                        </select>
+
+                        <div style="width: 1px; height: 25px; background: var(--line-color); margin-right: 10px;"></div>
+
+                        <span class="control-label" style="opacity:0.7; margin-right: 20px; flex-shrink: 0;"> | Filters:</span>
+
+                        <div class="search-input-wrapper" style="width: 200px !important; margin-right: 10px; flex-shrink: 0;">
+                            <i class="md-icon search-icon">search</i>
+                            <input type="text" id="txtSearchTags" placeholder="Search..." autocomplete="off" style="padding-left: 28px !important; background: rgba(128,128,128,0.06) !important; border: 1px solid var(--line-color) !important; width: 100% !important;" />
+                            <i class="md-icon" id="btnClearSearch">close</i>
+                        </div>
+
+                        <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 10px 0 0 !important; cursor: pointer !important; width: auto !important;">
+                            <input type="checkbox" id="chkFilterSchedule" is="emby-checkbox" />
+                            <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Schedule</span>
+                        </label>
+
+                        <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 !important; cursor: pointer !important; width: auto !important;">
+                            <input type="checkbox" id="chkFilterCollection" is="emby-checkbox" />
+                            <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Collection</span>
+                        </label>
+
+                    </div>`;
+
+                    headerAction.insertAdjacentHTML('afterend', controlRowHtml);
+
+                    const txtSearch = view.querySelector('#txtSearchTags');
+                    const btnClear = view.querySelector('#btnClearSearch');
+
+                    txtSearch.addEventListener('input', () => {
+                        btnClear.style.display = txtSearch.value ? 'block' : 'none';
+                        applyFilters(view);
+                    });
+
+                    btnClear.addEventListener('click', () => {
+                        txtSearch.value = '';
+                        btnClear.style.display = 'none';
+                        txtSearch.focus();
+                        applyFilters(view);
+                    });
+
+                    view.querySelector('#cbSortTags').addEventListener('change', function () {
+                        localStorage.setItem('AutoTag_SortBy', this.value);
+                        sortRows(view.querySelector('#tagListContainer'), this.value);
+                    });
+
+                    view.querySelector('#chkFilterSchedule').addEventListener('change', () => applyFilters(view));
+                    view.querySelector('#chkFilterCollection').addEventListener('change', () => applyFilters(view));
+                }
+
+                view.querySelector('#btnAddTag').addEventListener('click', () => {
+                    renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, view.querySelector('#tagListContainer'), true, undefined, true);
+                    applyFilters(view);
+                });
+
+                view.querySelector('#btnBackupConfig').addEventListener('click', () => {
+                    window.ApiClient.getPluginConfiguration(pluginId).then(config => {
+                        var json = JSON.stringify(config, null, 2);
+                        var blob = new Blob([json], { type: "application/json" });
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url; a.download = `AutoTag_Backup_${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                     });
                 });
-                container.addEventListener('drop', (e) => {
-                    if (localStorage.getItem('AutoTag_SortBy') !== 'Manual') return;
-                    e.preventDefault();
-                    const draggingRow = document.querySelector('.tag-row.dragging');
-                    const placeholder = document.querySelector('.sort-placeholder');
-                    if (draggingRow && placeholder) {
-                        container.insertBefore(draggingRow, placeholder);
-                        placeholder.remove();
-                        changeHandler(); // Drag and drop is a change
-                    }
+
+                var fileInput = view.querySelector('#fileRestoreConfig');
+                view.querySelector('#btnRestoreConfigTrigger').addEventListener('click', () => fileInput.click());
+                fileInput.addEventListener('change', function (e) {
+                    var file = e.target.files[0]; if (!file) return;
+                    var reader = new FileReader();
+                    reader.onload = function (e) {
+                        try {
+                            var config = JSON.parse(e.target.result);
+                            view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
+                            view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
+                            view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
+                            view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
+
+                            var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
+                            var grouped = groupConfigTags(config.Tags);
+
+                            var keys = Object.keys(grouped);
+                            keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
+                            if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 50 }], Active: true }, container, false, 0);
+
+                            applyFilters(view);
+
+                            requestAnimationFrame(function () {
+                                try {
+                                    originalConfigState = JSON.stringify(getUiConfig(view, true));
+                                } catch (err) {
+                                    originalConfigState = null;
+                                }
+                                window.Dashboard.alert("Configuration loaded!");
+                                checkFormState();
+                            });
+                        } catch (err) {
+                            window.Dashboard.alert("Failed to parse configuration file. The file may be corrupt or not a valid AutoTag backup file. Error: " + err.message);
+                        }
+                        fileInput.value = '';
+                    };
+                    reader.readAsText(file);
                 });
             }
 
-            view.insertAdjacentHTML('afterbegin', '<div class="dry-run-warning"><i class="md-icon" style="font-size:1.4em;"></i>AUTOTAG<br>DRY RUN MODE IS ACTIVE - NO CHANGES WILL BE SAVED</div>');
+            if (!view.querySelector('.dry-run-warning')) {
+                view.insertAdjacentHTML('afterbegin', '<div class="dry-run-warning"><i class="md-icon" style="font-size:1.4em;"></i>AUTOTAG<br>DRY RUN MODE IS ACTIVE - NO CHANGES WILL BE SAVED</div>');
+            }
 
             var btnSave = view.querySelector('.btn-save');
             if (btnSave) { btnSave.disabled = true; btnSave.style.opacity = "0.5"; }
-            
-            view.querySelector('#chkDryRunMode').addEventListener('change', updateDryRunWarning);
 
             checkForUpdates(view);
             refreshStatus(view);
             statusInterval = setInterval(() => refreshStatus(view), 5000);
-
-            var logOverlay = view.querySelector('#logModalOverlay');
-            var helpOverlay = view.querySelector('#helpModalOverlay');
-
-            view.querySelector('#btnOpenLogs').addEventListener('click', e => { e.preventDefault(); logOverlay.classList.add('modal-visible'); });
-            view.querySelector('#btnCloseLogs').addEventListener('click', () => logOverlay.classList.remove('modal-visible'));
-            logOverlay.addEventListener('click', e => { if (e.target === logOverlay) logOverlay.classList.remove('modal-visible'); });
-
-            view.querySelector('#btnOpenHelp').addEventListener('click', () => helpOverlay.classList.add('modal-visible'));
-            view.querySelector('#btnCloseHelp').addEventListener('click', () => helpOverlay.classList.remove('modal-visible'));
-            helpOverlay.addEventListener('click', e => { if (e.target === helpOverlay) helpOverlay.classList.remove('modal-visible'); });
-
-            var globalSettingsHeader = view.querySelector('#globalSettings .advanced-header');
-            if (globalSettingsHeader) {
-                globalSettingsHeader.addEventListener('click', function () {
-                    var body = view.querySelector('#globalSettings .advanced-body');
-                    var icon = view.querySelector('#globalSettings .expand-icon');
-                    var isHidden = body.style.display === 'none';
-                    body.style.display = isHidden ? 'block' : 'none';
-                    icon.innerText = isHidden ? 'expand_less' : 'expand_more';
-                });
-            }
-
-            var headerAction = view.querySelector('.sectionTitleContainer');
-            if (headerAction && !view.querySelector('#cbSortTags')) {
-                var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
-                headerAction.style.display = "flex";
-                headerAction.style.alignItems = "center";
-                headerAction.style.justifyContent = "space-between";
-                headerAction.style.width = "100%";
-                headerAction.style.marginBottom = "10px";
-
-                var controlRowHtml = `
-                <div class="control-row" style="flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; justify-content: flex-start !important; padding: 10px 15px !important; gap: 0 !important;">
-                    
-                    <span class="control-label" style="opacity:0.7; margin-right: 10px; flex-shrink: 0;">Sort:</span>
-
-                    <select is="emby-select" id="cbSortTags" style="color:inherit; background:rgba(128,128,128,0.08); border:1px solid var(--line-color); padding:5px; border-radius:4px; font-size:0.9em; cursor:pointer; width: 80px; margin-right: 0px;">
-                        <option value="Manual" ${savedSort === 'Manual' ? 'selected' : ''}>Manual</option>
-                        <option value="Name" ${savedSort === 'Name' ? 'selected' : ''}>Name</option>
-                        <option value="Active" ${savedSort === 'Active' ? 'selected' : ''}>Status</option>
-                        <option value="LatestEdited" ${savedSort === 'LatestEdited' ? 'selected' : ''}>Latest</option>
-                    </select>
-
-                    <div style="width: 1px; height: 25px; background: var(--line-color); margin-right: 10px;"></div>
-
-                    <span class="control-label" style="opacity:0.7; margin-right: 20px; flex-shrink: 0;"> | Filters:</span>
-                    
-                    <div class="search-input-wrapper" style="width: 200px !important; margin-right: 10px; flex-shrink: 0;">
-                        <i class="md-icon search-icon">search</i>
-                        <input type="text" id="txtSearchTags" placeholder="Search..." autocomplete="off" style="padding-left: 28px !important; background: rgba(128,128,128,0.06) !important; border: 1px solid var(--line-color) !important; width: 100% !important;" />
-                        <i class="md-icon" id="btnClearSearch">close</i>
-                    </div>
-
-                    <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 10px 0 0 !important; cursor: pointer !important; width: auto !important;">
-                        <input type="checkbox" id="chkFilterSchedule" is="emby-checkbox" />
-                        <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Schedule</span>
-                    </label>
-
-                    <label class="checkboxContainer" style="display: flex !important; align-items: center !important; margin: 0 !important; cursor: pointer !important; width: auto !important;">
-                        <input type="checkbox" id="chkFilterCollection" is="emby-checkbox" />
-                        <span style="font-size: 0.9em; margin-left: 5px; white-space: nowrap;">Collection</span>
-                    </label>
-
-                </div>`;
-
-                headerAction.insertAdjacentHTML('afterend', controlRowHtml);
-
-                const txtSearch = view.querySelector('#txtSearchTags');
-                const btnClear = view.querySelector('#btnClearSearch');
-
-                txtSearch.addEventListener('input', () => {
-                    btnClear.style.display = txtSearch.value ? 'block' : 'none';
-                    applyFilters(view);
-                });
-
-                btnClear.addEventListener('click', () => {
-                    txtSearch.value = '';
-                    btnClear.style.display = 'none';
-                    txtSearch.focus();
-                    applyFilters(view);
-                });
-
-                view.querySelector('#cbSortTags').addEventListener('change', function () {
-                    localStorage.setItem('AutoTag_SortBy', this.value);
-                    sortRows(view.querySelector('#tagListContainer'), this.value);
-                });
-
-                view.querySelector('#chkFilterSchedule').addEventListener('change', () => applyFilters(view));
-                view.querySelector('#chkFilterCollection').addEventListener('change', () => applyFilters(view));
-            }
-
-            view.querySelector('#btnAddTag').addEventListener('click', () => {
-                renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 0 }], Active: true }, view.querySelector('#tagListContainer'), true, undefined, true);
-                applyFilters(view);
-            });
 
             Promise.all([
                 window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "BoxSet", Recursive: true })),
@@ -1410,52 +1647,16 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                     var savedSort = localStorage.getItem('AutoTag_SortBy') || 'Manual';
                     sortRows(container, savedSort);
                     applyFilters(view);
-                    originalConfigState = JSON.stringify(getUiConfig(view, true));
-                    checkFormState();
-                    updateDryRunWarning();
-                });
-            });
-
-            view.querySelector('#btnBackupConfig').addEventListener('click', () => {
-                window.ApiClient.getPluginConfiguration(pluginId).then(config => {
-                    var json = JSON.stringify(config, null, 2);
-                    var blob = new Blob([json], { type: "application/json" });
-                    var url = URL.createObjectURL(blob);
-                    var a = document.createElement('a');
-                    a.href = url; a.download = `AutoTag_Backup_${new Date().toISOString().split('T')[0]}.json`;
-                    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                });
-            });
-
-            var fileInput = view.querySelector('#fileRestoreConfig');
-            view.querySelector('#btnRestoreConfigTrigger').addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', function (e) {
-                var file = e.target.files[0]; if (!file) return;
-                var reader = new FileReader();
-                reader.onload = function (e) {
-                    try {
-                        var config = JSON.parse(e.target.result);
-                        view.querySelector('#txtTraktClientId').value = config.TraktClientId || '';
-                        view.querySelector('#txtMdblistApiKey').value = config.MdblistApiKey || '';
-                        view.querySelector('#chkExtendedConsoleOutput').checked = config.ExtendedConsoleOutput || false;
-                        view.querySelector('#chkDryRunMode').checked = config.DryRunMode || false;
-
-                        var container = view.querySelector('#tagListContainer'); container.innerHTML = '';
-                        var grouped = groupConfigTags(config.Tags);
-
-                        var keys = Object.keys(grouped);
-                        keys.forEach((k, i) => renderTagGroup(grouped[k], container, false, i));
-                        if (keys.length === 0) renderTagGroup({ Tag: '', Urls: [{ url: '', limit: 50 }], Active: true }, container, false, 0);
-
-                        applyFilters(view);
-
-                        originalConfigState = JSON.stringify(getUiConfig(view, true));
-                        window.Dashboard.alert("Configuration loaded!");
+                    requestAnimationFrame(function () {
+                        try {
+                            originalConfigState = JSON.stringify(getUiConfig(view, true));
+                        } catch (err) {
+                            originalConfigState = null;
+                        }
                         checkFormState();
-                    } catch (err) { window.Dashboard.alert("Failed to parse configuration file."); }
-                    fileInput.value = '';
-                };
-                reader.readAsText(file);
+                        updateDryRunWarning();
+                    });
+                });
             });
         });
 
@@ -1485,20 +1686,20 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
             window.ApiClient.updatePluginConfiguration(pluginId, configObj).then(r => {
                 window.Dashboard.processPluginConfigurationUpdateResult(r);
-                originalConfigState = JSON.stringify(getUiConfig(view, true));
-                checkFormState();
-                updateDryRunWarning();
-                
-                // Update the UI with new timestamps
+
                 var newGrouped = groupConfigTags(configObj.Tags);
                 view.querySelectorAll('.tag-row').forEach(row => {
                     var name = row.querySelector('.txtEntryLabel').value;
-                    var tagName = row.querySelector('.txtTagName').value;
+                    var tagName = row.querySelector('.txtTagName').value || name;
                     var key = name ? name + '\x1F' + tagName : tagName;
-                    if(newGrouped[key]) {
+                    if (newGrouped[key]) {
                         row.dataset.lastModified = newGrouped[key].LastModified;
                     }
                 });
+
+                originalConfigState = JSON.stringify(getUiConfig(view, true));
+                checkFormState();
+                updateDryRunWarning();
             });
         });
 

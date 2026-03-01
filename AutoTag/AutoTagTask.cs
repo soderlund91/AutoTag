@@ -274,6 +274,34 @@ namespace AutoTag
                         }
                         else if (tagConfig.SourceType == "MediaInfo")
                         {
+                            var personCache = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+                            var allPersonCriteria = (tagConfig.MediaInfoFilters ?? new List<MediaInfoFilter>())
+                                .SelectMany(f => f.Criteria ?? new List<string>())
+                                .Concat(tagConfig.MediaInfoConditions ?? new List<string>());
+                            foreach (var c in allPersonCriteria)
+                            {
+                                if (personCache.ContainsKey(c)) continue;
+                                var p = c.Split(':');
+                                if (p.Length == 2 && (p[0] == "Actor" || p[0] == "Director" || p[0] == "Writer")
+                                    && Enum.TryParse<MediaBrowser.Model.Entities.PersonType>(p[0], out var personTypeEnum))
+                                {
+                                    var personItem = _libraryManager.GetItemList(new InternalItemsQuery
+                                    {
+                                        IncludeItemTypes = new[] { "Person" },
+                                        Name = p[1].Trim()
+                                    }).FirstOrDefault();
+                                    personCache[c] = personItem == null ? new HashSet<long>() :
+                                        _libraryManager.GetItemList(new InternalItemsQuery
+                                        {
+                                            PersonIds = new[] { personItem.InternalId },
+                                            PersonTypes = new[] { personTypeEnum },
+                                            IncludeItemTypes = new[] { "Movie", "Series" },
+                                            Recursive = true,
+                                            IsVirtualItem = false
+                                        }).Select(x => x.InternalId).ToHashSet();
+                                }
+                            }
+
                             foreach (var item in allItems)
                             {
                                 if (item.LocationType != LocationType.FileSystem) continue;
@@ -281,14 +309,12 @@ namespace AutoTag
                                 var imdb = item.GetProviderId("Imdb");
                                 if (!string.IsNullOrEmpty(imdb) && blacklist.Contains(imdb)) continue;
 
-                                if (ItemMatchesMediaInfo(item, tagConfig, debug, seriesEpisodeCache))
+                                if (ItemMatchesMediaInfo(item, tagConfig, debug, seriesEpisodeCache, personCache))
                                 {
                                     matchedLocalItems.Add(item);
+                                    if (effectiveLimit < 10000 && matchedLocalItems.Count >= effectiveLimit) break;
                                 }
                             }
-
-                            if (effectiveLimit < 10000 && matchedLocalItems.Count > effectiveLimit)
-                                matchedLocalItems = matchedLocalItems.Take(effectiveLimit).ToList();
                         }
 
                         if (matchedLocalItems.Count > 0)
@@ -340,7 +366,7 @@ namespace AutoTag
                     SaveFileHistory("autotag_history.txt", managedTags.ToList());
                 }
 
-                int tagsAdded = 0, tagsRemoved = 0, itemsChanged = 0;
+                int tagsAdded = 0, tagsRemoved = 0, itemsChanged = 0, updateCount = 0;
                 foreach (var item in allItems)
                 {
                     var existingTags = new HashSet<string>(item.Tags, StringComparer.OrdinalIgnoreCase);
@@ -356,7 +382,10 @@ namespace AutoTag
                     {
                         foreach (var t in toRemove) { item.RemoveTag(t); tagsRemoved++; }
                         foreach (var t in toAdd) { item.AddTag(t); tagsAdded++; }
-                        _libraryManager.UpdateItem(item, item.Parent, ItemUpdateType.MetadataEdit, null);
+                        try { _libraryManager.UpdateItem(item, item.Parent, ItemUpdateType.MetadataEdit, null); }
+                        catch (Exception ex) { LogSummary($"  ! Failed to save tags for '{item.Name}': {ex.Message}", "Warn"); }
+                        if (++updateCount % 25 == 0)
+                            await Task.Yield();
                     }
                     else
                     {
@@ -401,8 +430,8 @@ namespace AutoTag
                         var toRemove = currentMembers.Where(id => !desiredIds.Contains(id)).ToList();
                         if (toAdd.Count > 0 && !dryRun)
                             await _collectionManager.AddToCollection(existingColl.InternalId, toAdd.ToArray());
-                        if (toRemove.Count > 0 && !dryRun)
-                            _collectionManager.RemoveFromCollection((BoxSet)existingColl, toRemove.ToArray());
+                        if (toRemove.Count > 0 && !dryRun && existingColl is BoxSet boxSet)
+                            _collectionManager.RemoveFromCollection(boxSet, toRemove.ToArray());
                         if ((toAdd.Count > 0 || toRemove.Count > 0) && !dryRun)
                         {
                             collUpdated++;
@@ -471,7 +500,7 @@ namespace AutoTag
             return false;
         }
 
-        private bool ItemMatchesMediaInfo(BaseItem item, TagConfig tagConfig, bool debug, Dictionary<long, BaseItem>? seriesEpisodeCache = null)
+        private bool ItemMatchesMediaInfo(BaseItem item, TagConfig tagConfig, bool debug, Dictionary<long, BaseItem>? seriesEpisodeCache = null, Dictionary<string, HashSet<long>>? personCache = null)
         {
             var filters = tagConfig.MediaInfoFilters;
             var legacy = tagConfig.MediaInfoConditions;
@@ -509,18 +538,21 @@ namespace AutoTag
                 }
             }
 
-            bool is4k = false, is1080 = false, is720 = false, isHevc = false, isAv1 = false;
-            bool isHdr = false, isDv = false, isAtmos = false, isTrueHd = false, isDts = false;
-            bool is51 = false, is71 = false;
+            bool is4k = false, is1080 = false, is720 = false, is8k = false, isSd = false, isHevc = false, isAv1 = false, isH264 = false;
+            bool isHdr = false, isHdr10 = false, isDv = false, isAtmos = false, isTrueHd = false, isDtsHdMa = false, isDts = false, isAc3 = false, isAac = false;
+            bool is51 = false, is71 = false, isStereo = false, isMono = false;
+            var audioLanguages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
                 dynamic dynItem = itemToCheck;
                 try {
                     int defaultWidth = (int)dynItem.Width;
-                    if (defaultWidth >= 3800) is4k = true;
-                    else if (defaultWidth >= 1900) is1080 = true;
-                    else if (defaultWidth >= 1200) is720 = true;
+                    if (defaultWidth >= 7680) is8k = true;
+                    else if (defaultWidth >= 3800) is4k = true;
+                    else if (defaultWidth >= 1900 && !is4k && !is8k) is1080 = true;
+                    else if (defaultWidth >= 1200 && !is1080 && !is4k && !is8k) is720 = true;
+                    else if (defaultWidth > 0 && !is720 && !is1080 && !is4k && !is8k) isSd = true;
                 } catch { }
 
                 System.Collections.IEnumerable streams = null;
@@ -547,19 +579,23 @@ namespace AutoTag
 
                             if (type.Equals("Video", StringComparison.OrdinalIgnoreCase))
                             {
-                                try { int w = (int)stream.Width; if (w >= 3800) is4k = true; else if (w >= 1900) is1080 = true; else if (w >= 1200) is720 = true; } catch { }
+                                try { int w = (int)stream.Width; if (w >= 7680) is8k = true; else if (w >= 3800) is4k = true; else if (w >= 1900 && !is4k && !is8k) is1080 = true; else if (w >= 1200 && !is1080 && !is4k && !is8k) is720 = true; else if (w > 0 && !is720 && !is1080 && !is4k && !is8k) isSd = true; } catch { }
                                 if (codec.IndexOf("hevc", StringComparison.OrdinalIgnoreCase) >= 0 || codec.IndexOf("h265", StringComparison.OrdinalIgnoreCase) >= 0) isHevc = true;
                                 if (codec.IndexOf("av1", StringComparison.OrdinalIgnoreCase) >= 0) isAv1 = true;
+                                if (codec.IndexOf("h264", StringComparison.OrdinalIgnoreCase) >= 0 || codec.IndexOf("avc", StringComparison.OrdinalIgnoreCase) >= 0) isH264 = true;
                                 if (profile.IndexOf("dv", StringComparison.OrdinalIgnoreCase) >= 0 || profile.IndexOf("dolby vision", StringComparison.OrdinalIgnoreCase) >= 0) isDv = true;
-                                if (videoRange.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
-                                if (profile.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
+                                if (profile.IndexOf("hdr10", StringComparison.OrdinalIgnoreCase) >= 0 || videoRange.IndexOf("hdr10", StringComparison.OrdinalIgnoreCase) >= 0) isHdr10 = true;
+                                if (videoRange.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0 || profile.IndexOf("hdr", StringComparison.OrdinalIgnoreCase) >= 0) isHdr = true;
                             }
                             else if (type.Equals("Audio", StringComparison.OrdinalIgnoreCase))
                             {
                                 if (profile.IndexOf("atmos", StringComparison.OrdinalIgnoreCase) >= 0) isAtmos = true;
                                 if (codec.IndexOf("truehd", StringComparison.OrdinalIgnoreCase) >= 0) isTrueHd = true;
-                                if (codec.IndexOf("dts", StringComparison.OrdinalIgnoreCase) >= 0) isDts = true;
-                                try { int ch = (int)stream.Channels; if (ch == 6) is51 = true; if (ch >= 8) is71 = true; } catch { }
+                                if (codec.IndexOf("dts", StringComparison.OrdinalIgnoreCase) >= 0) { isDts = true; if (profile.IndexOf("ma", StringComparison.OrdinalIgnoreCase) >= 0) isDtsHdMa = true; }
+                                if (codec.IndexOf("ac3", StringComparison.OrdinalIgnoreCase) >= 0 || codec.IndexOf("eac3", StringComparison.OrdinalIgnoreCase) >= 0) isAc3 = true;
+                                if (codec.IndexOf("aac", StringComparison.OrdinalIgnoreCase) >= 0) isAac = true;
+                                try { int ch = (int)stream.Channels; if (ch == 1) isMono = true; else if (ch == 2) isStereo = true; else if (ch == 6) is51 = true; else if (ch >= 8) is71 = true; } catch { }
+                                try { var lang = stream.Language?.ToString(); if (!string.IsNullOrWhiteSpace(lang)) audioLanguages.Add(lang); } catch { }
                             }
                         }
                         catch { }
@@ -570,46 +606,118 @@ namespace AutoTag
 
             if (hasFilters)
             {
-                // All filter groups must pass (AND between groups)
-                foreach (var filter in filters!)
+                bool EvalCrit(string c) => EvaluateCriterion(c, itemToCheck, is4k, is1080, is720, is8k, isSd,
+                    isHevc, isAv1, isH264, isHdr, isHdr10, isDv, isAtmos, isTrueHd, isDtsHdMa, isDts,
+                    isAc3, isAac, is51, is71, isStereo, isMono, personCache, audioLanguages);
+                bool EvalGroup(MediaInfoFilter f)
                 {
-                    if (filter.Criteria == null || filter.Criteria.Count == 0) continue;
-                    bool isOr = string.Equals(filter.Operator, "OR", StringComparison.OrdinalIgnoreCase);
-                    bool groupPass = isOr
-                        ? filter.Criteria.Any(c => EvaluateCriterion(c, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71))
-                        : filter.Criteria.All(c => EvaluateCriterion(c, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71));
-                    if (!groupPass) return false;
+                    if (f.Criteria == null || f.Criteria.Count == 0) return true;
+                    bool isOr = string.Equals(f.Operator, "OR", StringComparison.OrdinalIgnoreCase);
+                    return isOr ? f.Criteria.Any(EvalCrit) : f.Criteria.All(EvalCrit);
                 }
-                return true;
+                bool result = EvalGroup(filters![0]);
+                for (int gi = 1; gi < filters.Count; gi++)
+                {
+                    bool groupResult = EvalGroup(filters[gi]);
+                    bool useOr = string.Equals(filters[gi].GroupOperator, "OR", StringComparison.OrdinalIgnoreCase);
+                    result = useOr ? result || groupResult : result && groupResult;
+                }
+                return result;
             }
 
             // Legacy: all conditions must match (AND)
             foreach (var cond in legacy!)
             {
-                if (!EvaluateCriterion(cond, is4k, is1080, is720, isHevc, isAv1, isHdr, isDv, isAtmos, isTrueHd, isDts, is51, is71))
+                if (!EvaluateCriterion(cond, itemToCheck, is4k, is1080, is720, is8k, isSd, isHevc, isAv1, isH264,
+                    isHdr, isHdr10, isDv, isAtmos, isTrueHd, isDtsHdMa, isDts, isAc3, isAac, is51, is71, isStereo, isMono,
+                    personCache, audioLanguages))
                     return false;
             }
             return true;
         }
 
-        private static bool EvaluateCriterion(string cond, bool is4k, bool is1080, bool is720, bool isHevc, bool isAv1, bool isHdr, bool isDv, bool isAtmos, bool isTrueHd, bool isDts, bool is51, bool is71)
+        private bool EvaluateCriterion(string cond, BaseItem item, bool is4k, bool is1080, bool is720,
+            bool is8k, bool isSd, bool isHevc, bool isAv1, bool isH264,
+            bool isHdr, bool isHdr10, bool isDv, bool isAtmos, bool isTrueHd,
+            bool isDtsHdMa, bool isDts, bool isAc3, bool isAac,
+            bool is51, bool is71, bool isStereo, bool isMono,
+            Dictionary<string, HashSet<long>>? personCache = null,
+            HashSet<string>? audioLanguages = null)
         {
+            var parts = cond.Split(':');
+            if (parts.Length == 2)
+            {
+                var prop = parts[0]; var val = parts[1].Trim();
+                return prop switch
+                {
+                    "Studio"        => MatchesAny(item.Studios, val),
+                    "Genre"         => MatchesAny(item.Genres, val),
+                    "Actor"         => personCache != null && personCache.TryGetValue(cond, out var aIds) && aIds.Contains(item.InternalId),
+                    "Director"      => personCache != null && personCache.TryGetValue(cond, out var dIds) && dIds.Contains(item.InternalId),
+                    "Writer"        => personCache != null && personCache.TryGetValue(cond, out var wIds) && wIds.Contains(item.InternalId),
+                    "Title"         => item.Name?.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0,
+                    "ContentRating" => string.Equals(item.OfficialRating, val, StringComparison.OrdinalIgnoreCase),
+                    "AudioLanguage" => audioLanguages != null && audioLanguages.Contains(val),
+                    _ => false
+                };
+            }
+            if (parts.Length == 3 && double.TryParse(parts[2],
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var num))
+            {
+                double? v = parts[0] switch
+                {
+                    "CommunityRating" => (double?)item.CommunityRating,
+                    "Year"    => (double?)item.ProductionYear,
+                    "Runtime" => item.RunTimeTicks.HasValue
+                                 ? (double?)(item.RunTimeTicks.Value / TimeSpan.TicksPerMinute) : null,
+                    _ => null
+                };
+                if (!v.HasValue) return false;
+                return parts[1] switch
+                {
+                    ">"  => v.Value > num,
+                    ">=" => v.Value >= num,
+                    "<"  => v.Value < num,
+                    "<=" => v.Value <= num,
+                    "="  => Math.Abs(v.Value - num) < 0.01,
+                    _ => false
+                };
+            }
             return cond switch
             {
-                "4K" => is4k,
-                "1080p" => is1080,
-                "720p" => is720,
-                "HEVC" => isHevc,
-                "AV1" => isAv1,
-                "HDR" => isHdr || isDv,
-                "DolbyVision" => isDv,
-                "Atmos" => isAtmos,
-                "TrueHD" => isTrueHd,
-                "DTS" => isDts,
-                "5.1" => is51,
-                "7.1" => is71,
+                "4K" => is4k, "8K" => is8k, "1080p" => is1080, "720p" => is720, "SD" => isSd,
+                "HEVC" => isHevc, "AV1" => isAv1, "H264" => isH264,
+                "HDR" => isHdr || isDv, "HDR10" => isHdr10, "DolbyVision" => isDv,
+                "Atmos" => isAtmos, "TrueHD" => isTrueHd, "DtsHdMa" => isDtsHdMa,
+                "DTS" => isDts, "AC3" => isAc3, "AAC" => isAac,
+                "7.1" => is71, "5.1" => is51, "Stereo" => isStereo, "Mono" => isMono,
                 _ => false
             };
+        }
+
+        private static bool MatchesAny(string[] values, string search) =>
+            values != null && values.Any(v =>
+                v.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0);
+
+        private static bool MatchesPerson(BaseItem item, string name, string type)
+        {
+            try
+            {
+                dynamic dynItem = item;
+                var people = dynItem.People;
+                if (people == null) return false;
+                foreach (dynamic p in people)
+                {
+                    string pType = p.Type?.ToString() ?? "";
+                    string pName = p.Name ?? "";
+                    if (string.Equals(pType, type, StringComparison.OrdinalIgnoreCase) &&
+                        pName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void LogSummary(string message, string level = "Info")
