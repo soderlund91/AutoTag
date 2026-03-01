@@ -8,6 +8,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
     var cachedCollections = [];
     var cachedPlaylists = [];
+    var cachedTags = [];
 
     var customCss = `
     <style id="autoTagCustomCss">
@@ -468,7 +469,8 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         VideoCodec: [['HEVC', 'HEVC / H.265'], ['AV1', 'AV1'], ['H264', 'H.264 / AVC']],
         HDR:        [['HDR', 'HDR (any)'], ['DolbyVision', 'Dolby Vision'], ['HDR10', 'HDR10']],
         AudioFormat: [['Atmos', 'Dolby Atmos'], ['TrueHD', 'Dolby TrueHD'], ['DtsHdMa', 'DTS-HD MA'], ['DTS', 'DTS'], ['AC3', 'Dolby Digital / AC3'], ['AAC', 'AAC']],
-        AudioChannels: [['7.1', '7.1+ Surround'], ['5.1', '5.1 Surround'], ['Stereo', 'Stereo'], ['Mono', 'Mono']]
+        AudioChannels: [['7.1', '7.1+ Surround'], ['5.1', '5.1 Surround'], ['Stereo', 'Stereo'], ['Mono', 'Mono']],
+        MediaType: [['Movie', 'Movie'], ['Series', 'Show / Series']]
     };
     var MI_NUMERIC_PROPS = ['CommunityRating', 'Year', 'Runtime'];
     var MI_TEXT_PLACEHOLDERS = {
@@ -481,7 +483,7 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
         var groups = [
             { label: 'Video', props: [['Resolution','Resolution'], ['VideoCodec','Video Codec'], ['HDR','HDR']] },
             { label: 'Audio', props: [['AudioFormat','Audio Format'], ['AudioChannels','Audio Channels'], ['AudioLanguage','Audio Language']] },
-            { label: 'Content', props: [['Title','Title'], ['Studio','Studio'], ['Genre','Genre'], ['Actor','Actor / Cast'], ['Director','Director'], ['Writer','Writer'], ['ContentRating','Content Rating']] },
+            { label: 'Content', props: [['MediaType','Media Type'], ['Tag','Tag'], ['Title','Title'], ['Studio','Studio'], ['Genre','Genre'], ['Actor','Actor / Cast'], ['Director','Director'], ['Writer','Writer'], ['ContentRating','Content Rating']] },
             { label: 'Metrics', props: [['CommunityRating','Community Rating'], ['Year','Year'], ['Runtime','Runtime (min)']] }
         ];
         return groups.map(function (g) {
@@ -494,6 +496,15 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
     }
 
     function getMiValueHtml(prop, savedOp, savedVal) {
+        if (prop === 'Tag') {
+            if (cachedTags.length > 0) {
+                var tagOpts = cachedTags.map(function (t) {
+                    return '<option value="' + t.replace(/"/g, '&quot;') + '"' + (t === savedVal ? ' selected' : '') + '>' + t + '</option>';
+                }).join('');
+                return '<select class="selMiValue" is="emby-select" style="flex:1;"><option value="">-- Select tag --</option>' + tagOpts + '</select>';
+            }
+            return '<input class="txtMiValue" is="emby-input" type="text" placeholder="e.g. 4K" value="' + (savedVal || '').replace(/"/g, '&quot;') + '" style="flex:1;" />';
+        }
         if (MI_DROPDOWN_OPTIONS[prop]) {
             var opts = MI_DROPDOWN_OPTIONS[prop].map(function (pair) {
                 return '<option value="' + pair[0] + '"' + (pair[0] === savedVal ? ' selected' : '') + '>' + pair[1] + '</option>';
@@ -764,6 +775,15 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
                             <button type="button" is="emby-button" class="btnChoosePoster raised" style="width:100%; background:transparent; border:2px dashed rgba(128,128,128,0.4); color:var(--theme-text-secondary);">
                                 <i class="md-icon" style="margin-right:5px;">image</i>Choose Poster Image
                             </button>
+                            <div style="display:flex; align-items:center; gap:6px; margin-top:8px; opacity:0.45;">
+                                <div style="flex:1; height:1px; background:currentColor;"></div>
+                                <span style="font-size:0.75em;">or</span>
+                                <div style="flex:1; height:1px; background:currentColor;"></div>
+                            </div>
+                            <div style="display:flex; gap:6px; margin-top:6px;">
+                                <input class="txtPosterUrl" is="emby-input" type="url" placeholder="https://example.com/poster.jpg" style="flex:1;" />
+                                <button type="button" is="emby-button" class="btnLoadPosterUrl raised btn-neutral">Load</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1090,6 +1110,36 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
             row.querySelector('.poster-preview-container').style.display = 'none';
             row.querySelector('.poster-preview-img').style.display = 'none';
             row.querySelector('.inputPosterFile').value = '';
+        });
+
+        row.querySelector('.btnLoadPosterUrl').addEventListener('click', function () {
+            var url = row.querySelector('.txtPosterUrl').value.trim();
+            if (!url) return;
+
+            var headers = { 'Content-Type': 'application/json' };
+            var token = window.ApiClient.accessToken();
+            if (token) headers['X-Emby-Token'] = token;
+
+            fetch(window.ApiClient.getUrl('AutoTag/FetchCollectionImageFromUrl'), {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ Url: url })
+            }).then(function (r) { return r.json(); })
+            .then(function (result) {
+                if (result.Success) {
+                    row.querySelector('.hiddenPosterPath').value = result.FilePath;
+                    row.querySelector('.poster-filename').textContent = url.split('/').pop().split('?')[0];
+                    row.querySelector('.poster-preview-container').style.display = 'block';
+                    var img = row.querySelector('.poster-preview-img');
+                    img.src = url;
+                    img.style.display = 'block';
+                    row.querySelector('.txtPosterUrl').value = '';
+                } else {
+                    window.Dashboard.alert('Failed to load image: ' + (result.Message || 'Unknown error'));
+                }
+            }).catch(function () {
+                window.Dashboard.alert('Error fetching image. Check the URL and server logs.');
+            });
         });
     }
 
@@ -1619,10 +1669,12 @@ define(['emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (
 
             Promise.all([
                 window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "BoxSet", Recursive: true })),
-                window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "Playlist", Recursive: true }))
+                window.ApiClient.getJSON(window.ApiClient.getUrl("Users/" + window.ApiClient.getCurrentUserId() + "/Items", { IncludeItemTypes: "Playlist", Recursive: true })),
+                window.ApiClient.getJSON(window.ApiClient.getUrl("Items/Filters2", { UserId: window.ApiClient.getCurrentUserId(), Recursive: true })).catch(function () { return { Tags: [] }; })
             ]).then(responses => {
                 cachedCollections = responses[0].Items || [];
                 cachedPlaylists = responses[1].Items || [];
+                cachedTags = ((responses[2] && responses[2].Tags) || []).slice().sort();
 
                 window.ApiClient.getPluginConfiguration(pluginId).then(config => {
                     var container = view.querySelector('#tagListContainer'); container.innerHTML = '';

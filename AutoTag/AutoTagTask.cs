@@ -604,11 +604,14 @@ namespace AutoTag
             }
             catch { }
 
+            string mediaType = item.GetType().Name;
+            string[] itemTags = item.Tags ?? Array.Empty<string>();
+
             if (hasFilters)
             {
                 bool EvalCrit(string c) => EvaluateCriterion(c, itemToCheck, is4k, is1080, is720, is8k, isSd,
                     isHevc, isAv1, isH264, isHdr, isHdr10, isDv, isAtmos, isTrueHd, isDtsHdMa, isDts,
-                    isAc3, isAac, is51, is71, isStereo, isMono, personCache, audioLanguages);
+                    isAc3, isAac, is51, is71, isStereo, isMono, personCache, audioLanguages, mediaType, itemTags);
                 bool EvalGroup(MediaInfoFilter f)
                 {
                     if (f.Criteria == null || f.Criteria.Count == 0) return true;
@@ -630,7 +633,7 @@ namespace AutoTag
             {
                 if (!EvaluateCriterion(cond, itemToCheck, is4k, is1080, is720, is8k, isSd, isHevc, isAv1, isH264,
                     isHdr, isHdr10, isDv, isAtmos, isTrueHd, isDtsHdMa, isDts, isAc3, isAac, is51, is71, isStereo, isMono,
-                    personCache, audioLanguages))
+                    personCache, audioLanguages, mediaType, itemTags))
                     return false;
             }
             return true;
@@ -642,7 +645,9 @@ namespace AutoTag
             bool isDtsHdMa, bool isDts, bool isAc3, bool isAac,
             bool is51, bool is71, bool isStereo, bool isMono,
             Dictionary<string, HashSet<long>>? personCache = null,
-            HashSet<string>? audioLanguages = null)
+            HashSet<string>? audioLanguages = null,
+            string? mediaType = null,
+            string[]? itemTags = null)
         {
             var parts = cond.Split(':');
             if (parts.Length == 2)
@@ -658,6 +663,8 @@ namespace AutoTag
                     "Title"         => item.Name?.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0,
                     "ContentRating" => string.Equals(item.OfficialRating, val, StringComparison.OrdinalIgnoreCase),
                     "AudioLanguage" => audioLanguages != null && audioLanguages.Contains(val),
+                    "MediaType"     => string.Equals(mediaType, val, StringComparison.OrdinalIgnoreCase),
+                    "Tag"           => itemTags != null && MatchesAny(itemTags, val),
                     _ => false
                 };
             }

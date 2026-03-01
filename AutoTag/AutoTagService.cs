@@ -37,6 +37,12 @@ namespace AutoTag
         public string Base64Data { get; set; } = "";
     }
 
+    [Route("/AutoTag/FetchCollectionImageFromUrl", "POST")]
+    public class FetchCollectionImageFromUrlRequest : IReturn<UploadCollectionImageResponse>
+    {
+        public string Url { get; set; } = "";
+    }
+
     public class UploadCollectionImageResponse
     {
         public bool Success { get; set; }
@@ -103,6 +109,39 @@ namespace AutoTag
                 var filePath = Path.Combine(imagesDir, fileName);
 
                 File.WriteAllBytes(filePath, Convert.FromBase64String(request.Base64Data));
+
+                return new UploadCollectionImageResponse { Success = true, FilePath = filePath };
+            }
+            catch (Exception ex)
+            {
+                return new UploadCollectionImageResponse { Success = false, Message = ex.Message };
+            }
+        }
+
+        public async Task<object> Post(FetchCollectionImageFromUrlRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.Url) || !request.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    return new UploadCollectionImageResponse { Success = false, Message = "Invalid URL." };
+
+                var dataPath = Plugin.Instance?.DataFolderPath;
+                if (dataPath == null) return new UploadCollectionImageResponse { Success = false, Message = "Plugin not initialized." };
+
+                var imagesDir = Path.Combine(dataPath, "collection_images");
+                Directory.CreateDirectory(imagesDir);
+
+                var ext = Path.GetExtension(new Uri(request.Url).AbsolutePath).ToLowerInvariant();
+                if (!new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" }.Contains(ext)) ext = ".jpg";
+
+                var fileName = $"{Guid.NewGuid():N}{ext}";
+                var filePath = Path.Combine(imagesDir, fileName);
+
+                using (var stream = await _httpClient.Get(new HttpRequestOptions { Url = request.Url, CancellationToken = CancellationToken.None }))
+                using (var fs = File.Create(filePath))
+                {
+                    await stream.CopyToAsync(fs);
+                }
 
                 return new UploadCollectionImageResponse { Success = true, FilePath = filePath };
             }
